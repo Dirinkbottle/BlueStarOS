@@ -1,64 +1,75 @@
-# 工具链配置
-RUSTC := rustc
-CC := riscv64-unknown-elf-gcc
-LD := riscv64-unknown-elf-ld
-OBJCOPY := riscv64-unknown-elf-objcopy
-QEMU := qemu-system-riscv64
+# Building
+TARGET := riscv64gc-unknown-none-elf
+MODE := release
+KERNEL_ELF := target/$(TARGET)/$(MODE)/os
+KERNEL_BIN := $(KERNEL_ELF).bin
+DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
-# 目标架构
-TARGET := riscv64imac-unknown-none-elf
+# Building mode argument
+ifeq ($(MODE), release)
+	MODE_ARG := --release
+endif
 
-# 构建目录
-BUILD_DIR := build
+# BOARD
+BOARD := qemu
+SBI ?= rustsbi
+BOOTLOADER := ./bootloader/$(SBI)-$(BOARD).bin
 
-# 源文件
-RUST_SRC := src/main.rs
-ASM_SRC := src/boot.S
-LINKER_SCRIPT := linker.ld
+# KERNEL ENTRY
+KERNEL_ENTRY_PA := 0x80200000
 
-# 输出文件
-RUST_OBJ := $(BUILD_DIR)/main.o
-BOOT_OBJ := $(BUILD_DIR)/boot.o
-KERNEL_ELF := $(BUILD_DIR)/kernel.elf
-KERNEL_BIN := $(BUILD_DIR)/kernel.bin
+# Binutils
+OBJDUMP := rust-objdump --arch-name=riscv64
+OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-# QEMU 参数
-QEMU_OPTS := -machine virt -bios none -kernel $(KERNEL_BIN) -nographic -serial mon:stdio
+# Disassembly
+DISASM ?= -x
 
-.PHONY: all clean run
+build: env $(KERNEL_BIN)
 
-all: $(KERNEL_BIN)
+env:
+	(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add $(TARGET)
+	cargo install cargo-binutils
+	rustup component add rust-src
+	rustup component add llvm-tools-preview
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+$(KERNEL_BIN): kernel
+	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-# 编译 Rust 代码
-$(RUST_OBJ): $(RUST_SRC) | $(BUILD_DIR)
-	$(RUSTC) \
-		--target $(TARGET) \
-		-C panic=abort \
-		-C link-arg=-T$(LINKER_SCRIPT) \
-		-C link-arg=-nostdlib \
-		-C opt-level=3 \
-		--emit obj=$@ \
-		$<
+kernel:
+	@echo Platform: $(BOARD)
+	@cargo build $(MODE_ARG)
 
-# 编译汇编启动代码
-$(BOOT_OBJ): $(ASM_SRC) | $(BUILD_DIR)
-	$(CC) -nostdlib -march=rv64imac -mabi=lp64 -c $< -o $@
-
-# 链接内核 - 修复链接脚本多次出现的问题
-$(KERNEL_ELF): $(BOOT_OBJ) $(RUST_OBJ) $(LINKER_SCRIPT)
-	$(LD) -T $(LINKER_SCRIPT) -nostdlib -o $@ $(BOOT_OBJ) $(RUST_OBJ)
-
-# 生成二进制镜像
-$(KERNEL_BIN): $(KERNEL_ELF)
-	$(OBJCOPY) -O binary $< $@
-
-# 运行 QEMU
-run: $(KERNEL_BIN)
-	$(QEMU) $(QEMU_OPTS)
-
-# 清理构建
 clean:
-	rm -rf $(BUILD_DIR)
+	@cargo clean
+
+disasm: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
+	
+disasm-vim: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
+	@vim $(DISASM_TMP)
+	@rm $(DISASM_TMP)
+
+run: run-inner
+
+run-inner: build
+	@qemu-system-riscv64 \
+		-machine virt \
+		-nographic \
+		-bios $(BOOTLOADER) \
+		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+
+debug: build
+	@tmux new-session -d \
+		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s -S" && \
+		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
+		tmux -2 attach-session -d
+
+gdbserver: build
+	@qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s -S
+
+gdbclient:
+	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
+
+.PHONY: build env kernel clean disasm disasm-vim run-inner gdbserver gdbclient

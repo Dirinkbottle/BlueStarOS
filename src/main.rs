@@ -1,35 +1,52 @@
+//! The main module and entrypoint
+//!
+//! The operating system and app also starts in this module. Kernel code starts
+//! executing from `entry.asm`, after which [`rust_main()`] is called to
+//! initialize various pieces of functionality [`clear_bss()`]. (See its source code for
+//! details.)
+//!
+//! We then call [`println!`] to display `Hello, world!`.
+//#![deny(missing_docs)]
+//#![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message,allocator_api,sync_unsafe_cell)]
-mod config;
-mod memory;
-mod uart;
-use core::{alloc::Layout, fmt::Write, panic::PanicInfo,};
-use crate::uart::{GLOBAL_UART, UART,};
-use memory::{STACK_ALLOCER,stack_allocer};
-use config::{_stack_top,_kernel_start,_kernel_end,_stack_bottom};
+#![feature(panic_info_message,alloc)]
+use core::arch::global_asm;
 
-/// Rust 入口函数
-#[unsafe(no_mangle)]
-pub extern "C" fn kernel_main() -> ! {
-    UART::init_uart();//serial init
-    stack_allocer::init(_kernel_start as usize, _kernel_start as usize + 1024*4); //4kb
-    // 主循环
-    print_hex!(_kernel_start as usize);
-    print_hex!(_stack_bottom as usize);
-    print_hex!(_stack_top as usize);
-    print_hex!(_kernel_end as usize);
-    println!("Hello, BlueStarOS!");
+#[macro_use]
+mod console;
+mod sbi;
+mod panic;
+mod config;
+mod logger;
+mod memory;
+mod sync;
+use log::trace;
+extern crate alloc;
+use crate::{config::{ekernel, skernel}, memory::allocator_init};
+global_asm!(include_str!("entry.asm"));
+/// clear BSS segment
+pub fn clear_bss() {
+    extern "C" {
+        pub fn sbss();
+        pub fn ebss();
+    }
+    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
+}
+fn info_trace(){
+    trace!("KERNEL START ADDRESS:{:#x} END ADDRESS:{:#x}",skernel as usize,ekernel as usize);
+
+}
+
+/// the rust entry-point of os
+#[no_mangle]
+pub fn blue_main() -> ! {
+    logger::init();//日志初始化
+    info_trace();
+    allocator_init();//内核堆，分配器初始化
+    panic!("test panic!");
     loop {
         
     }
-}
 
-/// Panic 处理函数
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    loop {
-       
-    }
 }
-

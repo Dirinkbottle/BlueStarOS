@@ -1,7 +1,7 @@
 //! Global logger
 
-use log::{Level, LevelFilter, Log, Metadata, Record,trace};
-
+use log::{Level, LevelFilter, Log, Metadata, Record, debug, trace};
+use crate::config::*;
 
 /// a simple logger
 struct SimpleLogger;
@@ -42,4 +42,37 @@ pub fn init() {
         Some("TRACE") => LevelFilter::Trace,
         _ => LevelFilter::Off,
     });
+}
+
+/*
+        pub fn kernel_stack_lower_bound();
+        pub fn kernel_stack_top();
+        pub fn ekernel();
+        pub fn skernel();
+        pub fn stext();
+        pub fn etext();
+        pub fn srodata();
+        pub fn erodata();
+        pub fn sdata();
+        pub fn edata();
+        pub fn sbss();
+        pub fn ebss(); */
+pub fn kernel_info_debug(){
+    let skernle:usize=skernel as usize;
+    let ekernle:usize=ekernel as usize;
+    let stext:usize=stext as usize;
+    let etext:usize=etext as usize;
+    let srodata:usize=srodata as usize;
+    let erodata:usize=erodata as usize;
+    let sdata:usize=sdata as usize;
+    let edata:usize=edata as usize;
+    let sbss:usize=sbss as usize;
+    let ebss:usize=ebss as usize;
+    debug!("Kernel start at {:#x} ,End at: {:#x}",skernle,ekernle);
+    debug!(".text start at {:#x} ,End at: {:#x}",stext,etext);
+    debug!(".rodata start at {:#x} ,End at: {:#x}",srodata,erodata);
+    debug!(".data start at {:#x} ,End at: {:#x}",sdata,edata);
+    debug!(".bss start at {:#x} ,End at: {:#x}",sbss,ebss);
+    debug!(".kernelStack start at {:#x} ,End at: {:#x}",kernel_stack_lower_bound as usize,kernel_stack_top as usize);
+    
 }

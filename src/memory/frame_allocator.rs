@@ -1,6 +1,6 @@
 use buddy_system_allocator::LockedHeap;
 use log::trace;
-use crate::{config::{KERNEL_HEADP, KERNEL_HEAP_SIZE}, memory::address::*,sync::UPSafeCell};
+use crate::{config::{KERNEL_HEADP, KERNEL_HEAP_SIZE, PAGE_SIZE}, memory::address::*,sync::UPSafeCell};
 use core::cell::UnsafeCell;
 use lazy_static::lazy_static;
 #[global_allocator]
@@ -11,7 +11,7 @@ pub fn allocator_init(){
     unsafe{
         ALLOCATOR.lock().init(KERNEL_HEADP.as_ptr() as usize,KERNEL_HEAP_SIZE);
     }
-    trace!("allocator init: size:{}MB",KERNEL_HEAP_SIZE/(1024*1024));
+    trace!("Kernel HeapAlloctor init, can use size:{}MB , mount on KERNEL_HEADP",KERNEL_HEAP_SIZE/(1024*1024));
 }
 
 
@@ -58,16 +58,17 @@ impl FrameAllocatorTrait for FrameAlloctor{
 
 impl FrameAlloctor {
     pub fn init(&mut self,start:usize,end:usize){
-        self.start=start;
-        self.end=end;
-       // self.recycle=Vec::new(); 不必重复设置
-        trace!("frame allocator init: start:{} end:{}",start,end);
-
+        self.start=VirAddr(start).floor_up().0/PAGE_SIZE;
+        self.end=VirAddr(end).floor_down().0/PAGE_SIZE;
+        self.recycle=Vec::new(); 
+        trace!("frame allocator init: start ppn:{} end ppn:{} size:{}MB",self.start,self.end,(end-start)/1024/1024);
     }
 }
 
+
+#[derive(Debug,Clone)]
 pub struct FramTracker{
-    ppn:PhysiNumber
+    pub ppn:PhysiNumber
 }
 impl FramTracker{
     fn new(ppn:PhysiNumber)->Self{
@@ -76,7 +77,6 @@ impl FramTracker{
         }
     }
 }
-
 lazy_static!{
     pub static ref FRAME_ALLOCATOR:UPSafeCell<FrameAlloctor>= 
     unsafe {
@@ -86,8 +86,6 @@ lazy_static!{
 pub fn init_frame_allocator(start:usize,end:usize){
     FRAME_ALLOCATOR.lock().init(start,end);
 }
-
-
 pub fn alloc_frame()->Option<FramTracker>{
     FRAME_ALLOCATOR.lock().alloc()
 }

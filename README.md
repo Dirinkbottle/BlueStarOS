@@ -39,7 +39,6 @@
         <li><a href="#功能特性">功能特性</a></li>
         <li><a href="#快速开始">快速开始</a></li>
         <li><a href="#使用说明">使用说明</a></li>
-        <li><a href="#项目结构">项目结构</a></li>
         <li><a href="#开发计划">开发计划</a></li>
         <li><a href="#许可证">许可证</a></li>
         <li><a href="#致谢">致谢</a></li>
@@ -54,7 +53,6 @@
 <section id="简介">
     <h2>简介</h2>
     <p>BlueStarOS 是一个使用 Rust 语言开发的轻量级操作系统内核，主要面向操作系统学习者。该内核是本人学习操作系统过程中实践的产物</p>
-    <p>作为教学型操作系统内核，BlueStarOS 代码结构清晰，文档详细，适合操作系统爱好者和 Rust 开发者学习参考。</p>
 </section>
 
 <section id="功能特性">
@@ -112,28 +110,6 @@
     <p>您可以通过查看串口输出或控制台信息来观察内核的运行状态和调试信息。</p>
 </section>
 
-<section id="项目结构">
-    <h2>项目结构</h2>
-    <pre><code>BlueStarOS/
-├── src/           # 内核源代码
-
-│   ├── memory/    # 内存管理模块
-
-│   ├── trap/      # 陷阱处理模块
-
-│   └── main.rs    # 内核入口点
-
-├── drivers/      # 设备驱动程序（规划中）
-
-├── user/         # 用户程序支持（规划中）
-
-├── Cargo.toml    # 项目配置
-
-└── README.md     # 项目说明文档</code></pre>
-
-</section>
-
-复制
 <section id="开发计划">
     <h2>开发计划</h2>
     <ul>

@@ -1,0 +1,9 @@
+/home/inkbottle/othersrc/BlueStarOS/kernel/target/riscv64gc-unknown-none-elf/debug/deps/libbuddy_system_allocator-d0a789e71bf3518d.rmeta: /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/lib.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/frame.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/linked_list.rs
+
+/home/inkbottle/othersrc/BlueStarOS/kernel/target/riscv64gc-unknown-none-elf/debug/deps/libbuddy_system_allocator-d0a789e71bf3518d.rlib: /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/lib.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/frame.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/linked_list.rs
+
+/home/inkbottle/othersrc/BlueStarOS/kernel/target/riscv64gc-unknown-none-elf/debug/deps/buddy_system_allocator-d0a789e71bf3518d.d: /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/lib.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/frame.rs /home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/linked_list.rs
+
+/home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/lib.rs:
+/home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/frame.rs:
+/home/inkbottle/.cargo/registry/src/mirrors.ustc.edu.cn-4affec411d11e50f/buddy_system_allocator-0.6.0/src/linked_list.rs:

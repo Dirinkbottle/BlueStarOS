@@ -1,7 +1,7 @@
 //! Global logger
 
 use log::{Level, LevelFilter, Log, Metadata, Record, debug, trace};
-use crate::{config::*, time::get_time};
+use crate::{config::*, time::get_time_ms};
 
 /// a simple logger
 struct SimpleLogger;
@@ -24,7 +24,7 @@ impl Log for SimpleLogger {
         println!(
             "\u{1B}[{}m[{}][{:>5}] {}\u{1B}[0m",
             color,
-            get_time(),      
+            get_time_ms(),      
             record.level(),
             record.args(),
         );

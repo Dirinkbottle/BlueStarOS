@@ -22,12 +22,14 @@ mod time;
 mod task;
 use log::{debug, trace, warn};
 use crate::config::{ebss, sbss};
-use crate::trap::set_kernel_trap_handler;
+use crate::time::{ set_next_timeInterupt};
+use crate::trap::{enable_timer_interupt, set_kernel_trap_handler};
 extern crate alloc;
 use crate::{config::*, logger::kernel_info_debug, memory::allocator_init};
 use crate::memory::init_frame_allocator;
 use crate::memory::MapSet;
 global_asm!(include_str!("entry.asm"));
+global_asm!(include_str!("app.asm"));
 /// clear BSS segment
 pub fn clear_bss() {
     extern "C" {
@@ -38,8 +40,7 @@ pub fn clear_bss() {
 }
 pub fn kernel_init(){
     clear_bss();//清空bss
-    set_kernel_trap_handler();//设置内核陷入入口
-    logger::init();//日志初始化
+    logger::init();//日志初始化 - 必须先初始化日志才能使用 debug!
     kernel_info_debug();//打印内核日志
     allocator_init();//内核堆，分配器初始化
     init_frame_allocator(ekernel as usize,ekernel as usize +MEMORY_SIZE);//物理内存页分配器初始化
@@ -47,20 +48,22 @@ pub fn kernel_init(){
 /// the rust entry-point of os
 #[no_mangle]
 pub fn blue_main() -> ! {
-    kernel_init(); //陷阱入口，bss，日志，分配器初始化
+    kernel_init(); //bss，日志，分配器初始化
     let mut kernel_space= MapSet::new_kernel();//内核地址空间，必须持有,从来不会丢弃
-    kernel_space.activate();
-   // kernel_space.translate_test();
-    warn!("All right,kernel Will end\n");
-        debug!("stext {:#x}",__kernel_trap as usize);
-        debug!("traper {:#x}",straper as usize);
-    unsafe {
-        let a = 0x0000abdca as *const usize;
-         println!("{}",&*a);
-         //core::arch::asm!("mret") 
-    }
-    loop{}
+    set_kernel_trap_handler();//初始化陷阱入口，应该在地址空间激活前开启
+    kernel_space.activate();//激活地址空间
+    enable_timer_interupt();//开启全局时间中断使能
+    set_next_timeInterupt();//第一次开启时钟中断
 
+    // kernel_space.translate_test();
+    warn!("All right,kernel Will end\n");
+    debug!("stext {:#x}",__kernel_trap as usize);
+    debug!("traper {:#x}",straper as usize);
+
+    panic!("exit");
+    loop{
+     
+    }
     panic!("Kernel End");
 
 }

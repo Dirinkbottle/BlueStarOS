@@ -1,6 +1,6 @@
 
 use core::mem::size_of;
-use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, time::{TimeVal, get_time}};
+use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, time::{TimeVal, get_time_ms}};
 
 
 
@@ -30,8 +30,8 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
          unsafe {
            time_val= &mut *((frame_pointer as *mut _ as usize+offset) as *mut TimeVal);
             *time_val=TimeVal{
-               sec:get_time()/1000,
-               ms:get_time()
+               sec:get_time_ms()/1000,
+               ms:get_time_ms()
             }
          }
       }else { 
@@ -41,6 +41,10 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
       
    }
 
+
+}
+
+pub fn sys_write(source_buffer:&mut [u8]){//用户空间缓冲数组
 
 }
 

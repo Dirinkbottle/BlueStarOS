@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use log::{debug, error, trace};
 use core::arch::asm;
     use riscv::register::satp;
+    use crate::task::file_loader;
 
 use crate::{config::*, memory::{address::*, alloc_frame, frame_allocator::FramTracker}};
 pub struct VirNumRange(pub VirNumber,pub VirNumber);//开始和结束，一个范围
@@ -99,6 +100,20 @@ impl MapArea {
 }
 impl MapSet {
 
+    ///从elf解析数据创建应用地址空间
+    pub fn from_elf()->Self{
+       let mut bare_table_memset= MapSet::new_bare();
+       bare_table_memset.map_traper();
+       let data = file_loader();
+       let elf=xmas_elf::ElfFile::new(data).expect("Should prase elf data");
+       let elf_header=elf.header;
+       let elf_magic =elf_header.pt1.magic;//标志elf文件魔数 [0x7f, 0x45, 0x4c, 0x46]-> 0x7F 'E' 'L' 'F'
+       assert_eq!(elf_magic,[0x7f, 0x45, 0x4c, 0x46],"Not a Elf File"); 
+       let ph_count = elf_header.pt2.ph_count();//获取程序节数量
+
+    }
+
+
     ///这个map_one函数会在第0个self.area里面随便分配一个帧然后映射
     pub fn map_one(){
 
@@ -148,7 +163,7 @@ impl MapSet {
         //映射代码段
         let text_start_vpn = VirNumber(VirAddr(stext as usize).floor_down().0 / PAGE_SIZE);
         let text_end_vpn = VirNumber( VirAddr(etext as usize + PAGE_SIZE).floor_up().0 / PAGE_SIZE);
-        mem_set.add_area(VirNumRange(text_start_vpn, text_end_vpn), MapType::Indentical, MapAreaFlags::R | MapAreaFlags::X);
+        mem_set.add_area(VirNumRange(text_start_vpn, text_end_vpn), MapType::Indentical, MapAreaFlags::R | MapAreaFlags::X );
         //trace!("{} {}\n",text_start_vpn.0,text_end_vpn.0);
 
 

@@ -1,5 +1,7 @@
 use core::arch::asm;
 
+
+const SET_TIMER:usize=0;
 const PUTC_CALLID:usize=1;
 const SHUTDOWN_CALLID:usize=8;
 
@@ -26,4 +28,10 @@ pub fn putc(cha:usize){
 pub fn shutdown()->!{
     sbi_call(SHUTDOWN_CALLID, 0, 0, 0);
     panic!("It should shutdown!");
+}
+
+
+///设置下一次的时钟中断
+pub fn set_next_timetriger(timer:usize){
+    sbi_call(SET_TIMER, timer, 0, 0);
 }

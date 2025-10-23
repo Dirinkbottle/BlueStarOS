@@ -61,7 +61,8 @@
         <li><strong>动态堆分配器</strong>: 实现基于 Buddy System 或类似算法的动态内存管理</li>
         <li><strong>陷阱处理程序</strong>: 处理异常、中断和系统调用陷阱</li>
         <li><strong>虚拟地址空间和分页功能</strong>: 实现虚拟内存管理，支持分页机制</li>
-        <li><strong>下一步开发目标</strong>: 支持用户程序执行，添加用户库</li>
+        <li><strong>任务切换功能</strong>:已经实现内核到加载简单test elf程序运行。syscall目前不完善</li>
+        <li><strong>下一步开发目标</strong>: 完善用户库，支持基本系统调用</li>
     </ul>
 </section>
 

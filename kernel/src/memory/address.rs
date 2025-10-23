@@ -74,28 +74,55 @@ impl VirNumber {
         let  vpn = self.0;
         let mut idx: [usize; 3] = [0; 3];
         // SV39: VPN[2] (最高位) -> VPN[1] -> VPN[0] (最低位)
-        idx[0] = (vpn >> 18) & 0x1FF;  // 27-18位
-        idx[1] = (vpn >> 9) & 0x1FF;   // 18-9位  
-        idx[2] = vpn & 0x1FF;          // 8-0位
+        idx[0] = (vpn >> 18) & 0x1FF;  
+        idx[1] = (vpn >> 9) & 0x1FF;   
+        idx[2] = vpn & 0x1FF;
         idx
+    }
+
+    ///自身vpn+1
+    pub fn step(&mut self)->Self{
+        self.0+=1;
+        self.clone()
     }
 }
 
 impl VirAddr {
-    pub fn floor_up(&self)->Self{
+    ///向上对齐到页面
+    pub fn floor_up(&self)->VirNumber{
         let addr=self.0;
-        if addr%PAGE_SIZE==0{
-            VirAddr(addr)
-        }else{
-            VirAddr((addr/PAGE_SIZE+1)*PAGE_SIZE)
-        }
+        VirNumber((addr+PAGE_SIZE-1)/PAGE_SIZE)//绝对正确对齐
     }
-    pub fn floor_down(&self)->Self{
+    ///向下对齐到页面
+    pub fn floor_down(&self)->VirNumber{
         let addr=self.0;
-        VirAddr((addr/PAGE_SIZE)*PAGE_SIZE)
+        VirNumber(addr/PAGE_SIZE)//直接截断
     }
     pub fn offset(&self)->usize{
-        self.0 & 4095
+        self.0 & (PAGE_SIZE-1) 
+    }
+    ///不裁剪对齐转化 要求地址必须对齐
+    pub fn strict_into_virnum(&self)->VirNumber{
+        if self.0 % PAGE_SIZE!=0{panic!("strict_into_virnum Filed!!");}
+        VirNumber(self.0/PAGE_SIZE)
+    }
+}
+
+
+impl PhysiAddr{
+    ///向上对齐到页面
+    pub fn floor_up(&self)->PhysiNumber{
+        let addr=self.0;
+        PhysiNumber((addr+PAGE_SIZE-1)/PAGE_SIZE)//绝对正确对齐
+    }
+    ///向下对齐页面
+    pub fn floor_down(&self)->PhysiNumber{
+        let addr=self.0;
+        PhysiNumber(addr/PAGE_SIZE)//直接截断
+    }
+    ///物理的12位偏移
+    pub fn offset(&self)->usize{
+        self.0 & (PAGE_SIZE-1) 
     }
 }
 
@@ -128,12 +155,18 @@ impl PageTable {
         }
     }
 
+    ///从给定的satp中创建临时新页表 临时使用物理ppn为粗略提取
+    pub fn crate_table_from_satp(satp:usize)->*mut PageTable{
+        let ppn =satp & 0xffffffffff;
+        (ppn*PAGE_SIZE )as *mut PageTable
+    }
+
     pub fn get_current_pagetable()->*mut PageTable{
         let ppn=satp::read().bits() & 0xffffffffffe;//44位 ppn掩码
         (ppn*PAGE_SIZE) as *mut PageTable//转换为当前页表
     }
 
-    ///根据vpn获取该页的可变数组切片
+    ///根据vpn获取该页的可变数组切片,获取从物理页开头的地址切片
     pub fn get_mut_byte(&mut self,vpn:VirNumber)->Option<&'static mut [u8;PAGE_SIZE]>{//防止跨页
         let phydr=self.translate(vpn.into()).expect("Virtual Address translate to Physical Adress Failed!");
         unsafe {
@@ -141,6 +174,7 @@ impl PageTable {
         }
     }
 
+    ///专注翻译完整虚拟地址带偏移,结束地址不考虑是否对齐,使用者肯定
     pub fn translate(&mut self,VDDR:VirAddr)->Option<PhysiAddr>{
         match self.find_pte_vpn(VDDR.into()){
             Some(pte)=>{
@@ -153,6 +187,20 @@ impl PageTable {
             }
         }
     }
+
+    ///专注于通过vpn翻译,返回ppn号
+    pub fn translate_byvpn(&mut self,vpn:VirNumber)->Option<PhysiNumber>{
+        match self.find_pte_vpn(vpn.into()){
+            Some(pte)=>{
+                let ppn=pte.ppn();
+                Some(ppn)
+            }
+            None=>{
+                None
+            }
+        }
+    }
+
 
     pub fn get_pte_array(&self,phynum:usize)->&'static mut [PageTableEntry;512]{//加上长度限制，防止跨界
         let phyaddr:PhysiAddr=PhysiNumber(phynum).into();

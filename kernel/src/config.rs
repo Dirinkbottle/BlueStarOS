@@ -1,3 +1,4 @@
+use crate::{task::TaskContext, trap::TrapContext};
 extern "C"{
         pub fn kernel_stack_lower_bound();
         pub fn kernel_stack_top();
@@ -13,23 +14,45 @@ extern "C"{
         pub fn edata();
         pub fn sbss();
         pub fn ebss();
-        pub fn __kernel_trap();//内核陷阱地址
-        pub fn __kernel_refume();//内核陷阱恢复地址
-        pub fn straper();//内核陷阱的物理起始地址
+        ///内核陷阱地址
+        pub fn __kernel_trap();
+        ///内核陷阱恢复地址
+        pub fn __kernel_refume();
+        ///内核陷阱的物理起始地址
+        pub fn straper();
+        ///用户程序专用陷阱物理起始地址
+        pub fn utraper();
         pub fn app_start();//测试应用地址
         pub fn app_end();//测试应用地址
+        pub fn __switch(need_swapout:*const TaskContext,need_swapin:*const TaskContext);//任务切换汇编函数
 }
+///MB的简单封装
 pub const  MB:usize=1024*1024;
 pub const  PAGE_SIZE:usize=4096;//每个页面大小4kb
 pub const KERNEL_HEAP_SIZE:usize=1*MB;//内核堆大小
+pub const KERNEL_STACK_SIZE:usize=PAGE_SIZE*2;//应用内核栈有两个页面的大小
 pub static mut KERNEL_HEADP:[u8;KERNEL_HEAP_SIZE]=[0;KERNEL_HEAP_SIZE];//内核堆实例
 pub const  PAGE_SIZE_BITS:usize=12;//2^12=4096 4kb
 pub const MEMORY_SIZE:usize=10*MB;//总可用空闲物理内存大小100个页
 pub const CPU_CIRCLE:usize=12_500_000;
-//使用虚拟高地址并且刚好留够一个页面
+///使用虚拟高地址并且刚好留够一个页面,代表开始的第一个地址
 pub const TRAP_BOTTOM_ADDR:usize=usize::MAX-PAGE_SIZE+1;
+///每个app的trap context (高地址)
+pub const TRAP_CONTEXT_ADDR:usize=TRAP_BOTTOM_ADDR-PAGE_SIZE;
 pub const HIGNADDRESS_MASK:usize=0xFFFFFFE000000000;
-
-
 ///每秒多少次时钟中断
 pub const TIME_FREQUENT:usize=100;
+
+
+///任务初始ticket(优先级)
+pub const TASK_TICKET:usize=3;
+///初始大数
+pub const BIG_INT:usize=1_000_000;
+
+use lazy_static::lazy_static;
+use crate::{MapSet, sync::UPSafeCell};
+lazy_static!{
+        pub static ref KERNEL_SPACE:UPSafeCell<MapSet> =unsafe {
+            UPSafeCell::new( MapSet::new_kernel())//内核地址空间，必须持有,从来不会丢弃
+        };
+}

@@ -5,7 +5,7 @@
 //#![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message,alloc)]
+#![feature(panic_info_message,alloc,panic_internals)]
 use core::arch::global_asm;
 
 #[macro_use]
@@ -21,7 +21,9 @@ mod trap;
 mod time;
 mod task;
 use log::{debug, trace, warn};
+use riscv::asm;
 use crate::config::{ebss, sbss};
+use crate::task::run_first_task;
 use crate::time::{ set_next_timeInterupt};
 use crate::trap::{enable_timer_interupt, set_kernel_trap_handler};
 extern crate alloc;
@@ -49,21 +51,16 @@ pub fn kernel_init(){
 #[no_mangle]
 pub fn blue_main() -> ! {
     kernel_init(); //bss，日志，分配器初始化
-    let mut kernel_space= MapSet::new_kernel();//内核地址空间，必须持有,从来不会丢弃
     set_kernel_trap_handler();//初始化陷阱入口，应该在地址空间激活前开启
-    kernel_space.activate();//激活地址空间
-    enable_timer_interupt();//开启全局时间中断使能
-    set_next_timeInterupt();//第一次开启时钟中断
-
+    KERNEL_SPACE.lock().activate();//激活地址空间
+   // enable_timer_interupt();//开启全局时间中断使能
+    //set_next_timeInterupt();//第一次开启时钟中断
     // kernel_space.translate_test();
     warn!("All right,kernel Will end\n");
     debug!("stext {:#x}",__kernel_trap as usize);
     debug!("traper {:#x}",straper as usize);
-
-    panic!("exit");
-    loop{
-     
-    }
+    debug!("trap refume virtualaddr:{:#x}",__kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR);
+    run_first_task();
     panic!("Kernel End");
 
 }

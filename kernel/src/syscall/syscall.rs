@@ -1,6 +1,9 @@
 
 use core::mem::size_of;
-use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, time::{TimeVal, get_time_ms}};
+use alloc::vec::Vec;
+use log::error;
+
+use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, task::TASK_MANAER, time::{TimeVal, get_time_ms}};
 
 
 
@@ -44,7 +47,28 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
 
 }
 
-pub fn sys_write(source_buffer:&mut [u8]){//用户空间缓冲数组
+
+///这个指针是用户空间的指针，应该解地址
+pub fn sys_write(source_buffer:usize){//用户空间缓冲数组，应该以\0结束
+   panic!("Syscalled sys_write!!!");
+
+
+
+   
+   let task_satp= TASK_MANAER.get_current_stap();
+   let task_table_mut_pointer = PageTable::crate_table_from_satp(task_satp);
+   let mut task_pagetable = unsafe {
+       &mut *task_table_mut_pointer
+   };
+   let mut page_start_phyaddr= task_pagetable.get_mut_byte(VirAddr(source_buffer).floor_down()).expect("Error source buffer!!");
+   let phy_offset=VirAddr(source_buffer).offset();
+   let last_physlice = &mut page_start_phyaddr[phy_offset..];
+   let mut buffer:Vec<u8>=Vec::new();
+   last_physlice.iter().for_each(|cha|{
+      if *cha != b'|'{
+         buffer.push(*cha);
+      }
+   });
 
 }
 

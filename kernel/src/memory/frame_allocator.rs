@@ -1,6 +1,6 @@
 use buddy_system_allocator::LockedHeap;
 use log::trace;
-use crate::{config::{KERNEL_HEADP, KERNEL_HEAP_SIZE, PAGE_SIZE}, memory::address::*,sync::UPSafeCell};
+use crate::{config::{KERNEL_HEADP, KERNEL_HEAP_SIZE, MB, PAGE_SIZE}, memory::address::*,sync::UPSafeCell};
 use core::cell::UnsafeCell;
 use lazy_static::lazy_static;
 
@@ -12,13 +12,18 @@ pub fn allocator_init(){
     unsafe{
         ALLOCATOR.lock().init(KERNEL_HEADP.as_ptr() as usize,KERNEL_HEAP_SIZE);
     }
-    trace!("Kernel HeapAlloctor init, can use size:{}MB , mount on KERNEL_HEADP",KERNEL_HEAP_SIZE/(1024*1024));
+    trace!("Kernel HeapAlloctor init, can use size:{}MB , mount on KERNEL_HEADP",KERNEL_HEAP_SIZE/MB);
 }
 
-///物理页分配器
+///物理页分配器 [start,end)
 pub struct FrameAlloctor{
+    ///代表起始物理页号
     start:usize,
+    ///辅助记录初始start
+    origin:usize,
+    ///代表结束物理页号，不能取
     end:usize,
+    ///页帧回收池
     recycle:Vec<usize>
 }
 
@@ -32,9 +37,11 @@ impl FrameAllocatorTrait for FrameAlloctor{
         FrameAlloctor{
             start:0,
             end:0,
+            origin:0,
             recycle:Vec::new()
         }
     }
+    ///分配物理页帧
     fn alloc(&mut self)->Option<FramTracker>{
         if let Some(ppn)=self.recycle.pop(){
             trace!("recycle frame:ppn:{}",ppn);
@@ -49,26 +56,26 @@ impl FrameAllocatorTrait for FrameAlloctor{
         }
     }
 
+    ///回收物理页帧
     fn dealloc(&mut self,ppn:usize) {
         //页号合法性检查
-        if ppn>= self.start || ppn>self.end || self.recycle.contains(&ppn){
+        if ppn<self.origin || ppn>= self.start || ppn>self.end || self.recycle.contains(&ppn){
             panic!("frame ppn:{} is not valid!",ppn);
         }
-        
-
         trace!("Frame ppn: {} was recycled!",ppn);
         //回收物理页帧
         self.recycle.push(ppn);
-
     }
+
 }
 
 impl FrameAlloctor {
     pub fn init(&mut self,start:usize,end:usize){
-        self.start=VirAddr(start).floor_up().0/PAGE_SIZE;
-        self.end=VirAddr(end).floor_down().0/PAGE_SIZE;
+        self.start=PhysiAddr(start).floor_up().0;
+        self.end=PhysiAddr(end).floor_down().0;
         self.recycle=Vec::new(); 
-        trace!("frame allocator init: start ppn:{} end ppn:{} size:{}MB",self.start,self.end,(end-start)/1024/1024);
+        self.origin=start;
+        trace!("frame allocator init: start ppn:{} end ppn:{} size:{}MB",self.start,self.end,(end-start)/MB);
     }
 }
 

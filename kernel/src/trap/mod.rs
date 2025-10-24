@@ -74,9 +74,8 @@ pub fn set_kernel_trap_handler(){
         let hander_func=kernel_trap_handler as usize;
         let trap_entry = TRAP_BOTTOM_ADDR as usize;
         stvec::write(trap_entry, TrapMode::Direct);
-        debug!("Kernel TrapHandler func addr    :{:#x}",hander_func);
-
-        debug!("Traper Set Success!");
+       // debug!("Kernel TrapHandler func addr    :{:#x}",hander_func);
+        //debug!("Traper Set Success!");
     }
 }
 
@@ -95,7 +94,7 @@ pub extern "C" fn app_entry_point() {
     let restore_va = __kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR;
    // let restore_va = __kernel_refume as usize;
     // trace!("[kernel] trap_return: ..before return");
-   debug!("Welcome to app entry point!!! user_satp:{}",user_satp);
+   //debug!("Welcome to app entry point!!! user_satp:{:#x}",user_satp);
     unsafe {
         asm!(
             "fence.i",
@@ -122,9 +121,11 @@ pub extern "C" fn kernel_trap_handler(){//内核专属trap（目前不应该被�
     let a2 =[current_trapcx.x[10],current_trapcx.x[11],current_trapcx.x[12]];
         match scauses.cause(){
         Trap::Exception(Exception::UserEnvCall)=>{
+            debug!("pre sepc:{:#x}",current_trapcx.sepc_entry_point);
             current_trapcx.sepc_entry_point += 4;
             // 调用系统调用处理器，返回值存入 a0 (x10)
             let ret = syscall_handler(a1, a2);
+            debug!("lat sepc:{:#x}",current_trapcx.sepc_entry_point);
             current_trapcx.x[10] = ret as usize;
         }
         Trap::Exception(Exception::IllegalInstruction)=>{
@@ -152,7 +153,6 @@ app_entry_point();//传入特定参数，返回回去
 
 pub extern "C" fn kernel_traped_forbid(){//内核专属trap目前只支持时钟设置
 let scauses = scause::read();
-
             panic!("UnSupport Kernel Trap: {:?}", scauses.cause())
 
 }

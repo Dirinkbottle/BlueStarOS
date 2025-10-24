@@ -14,9 +14,8 @@ const FD_TYPE_STDOUT:usize=2;
 fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面  
       let vpn=(addr as usize)/PAGE_SIZE;
       let offset=VirAddr(addr as usize).offset();
-      let mut table=unsafe {//获取页表
-       &mut *PageTable::get_current_pagetable()
-      };
+      // 获取当前页表的临时视图
+      let mut table = PageTable::get_current_pagetable_view();
       let mut frame_pointer=table.get_mut_byte(VirNumber(vpn)).expect("Big Error!");
 
    //判断是否跨页 跨页需要特殊处理
@@ -24,10 +23,6 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
    if vpn !=(addr as usize -1 +len)/PAGE_SIZE{
       //跨页
       //let new_frame_pointer=table.get_mut_byte(VirNumber(vpn+1)); 不重复申请，节省内存
-      let table=unsafe {
-          &mut *PageTable::get_current_pagetable()
-      };
-
       if table.is_maped(VirNumber(vpn+1)){
          //并且存在合法映射,拼接两个页面
         let mut time_val:&mut TimeVal;
@@ -53,15 +48,14 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
 pub fn sys_write(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{//用户空间缓冲数组，应该以\0结束
   match fd_target {
       FD_TYPE_STDOUT=>{
-
-         debug!("current task satp:{:#x},source buffer:{:#x} buffer_len:{}",TASK_MANAER.get_current_stap(),source_buffer,buffer_len);
-
-         let buffer = PageTable::get_mut_slice_from_satp(TASK_MANAER.get_current_stap(), buffer_len, VirAddr(source_buffer));
-
-         let len=buffer.len();
-         for i in buffer{
-               print!("{}",core::str::from_utf8(i).expect("Ilegal utf8 char!"));
+         let user_satp=TASK_MANAER.get_current_stap();
+         //debug!("current task satp:{:#x},source buffer:{:#x} buffer_len:{}",user_satp,source_buffer,buffer_len);
+         let buffer = PageTable::get_mut_slice_from_satp(user_satp, buffer_len, VirAddr(source_buffer));
+         let len:usize=buffer.iter().map(|slic|{slic.len()}).sum();
+         for i in buffer{            
+            print!("{}",core::str::from_utf8(i).expect("Ilegal utf8 char!"));
          }
+         
          return len as isize;
       }
       FD_TYPE_STDIN=>{

@@ -5,10 +5,8 @@ use crate::sbi::shutdown;
 fn panic(_info: &PanicInfo) -> ! {
     let location = _info.location();
     if let Some(loca) = location {
-        println!("[Kernel Panic]: Kernel panic at {}:{}: {}", loca.file(), loca.line(), _info.message().unwrap());
         error!("[Kernel Panic]: Kernel panic at {}:{}: {}", loca.file(), loca.line(), _info.message().unwrap())
     }else {
-        println!("[Kernel Panic]: Kernel panic: {}", _info.message().unwrap());
         error!("[Kernel Panic]: Kernel panic: {}", _info.message().unwrap());
     }
 

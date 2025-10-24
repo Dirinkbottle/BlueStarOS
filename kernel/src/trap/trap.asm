@@ -49,7 +49,7 @@ jr t1#跳转到traphandler
 
 #x权限硬性要求对齐
 .align 4
-__kernel_refume: #a0 task_cx_addr a1:user satp
+__kernel_refume: #a0 trap_context_addr a1:user satp
 
 #切换为用户地址空间
 csrw satp ,a1

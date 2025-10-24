@@ -189,19 +189,21 @@ impl MapSet {
         memory_set.map_trapContext();
         //映射普通用户栈
         let userstack_start_vpn=VirNumber(max_end_vpn.0+1);//留guradpage
-        let user_sp:VirAddr=VirAddr((max_end_vpn.0+2)*PAGE_SIZE -1);//因为结尾不包含，属于下一个页面
+        let userstack_end_vpn=VirNumber(userstack_start_vpn.0+1);
+        let user_sp:VirAddr=VirAddr(userstack_end_vpn.0*PAGE_SIZE + PAGE_SIZE);//因为结尾不包含，属于下一个页面
         debug!("  Mapping user stack: vpn={:#x}, sp={:#x}", userstack_start_vpn.0, user_sp.0);
-        memory_set.add_area(VirNumRange(userstack_start_vpn,userstack_start_vpn), MapType::Maped, MapAreaFlags::W | MapAreaFlags::R | MapAreaFlags::U, None);
+        memory_set.add_area(VirNumRange(userstack_start_vpn,userstack_end_vpn), MapType::Maped, MapAreaFlags::W | MapAreaFlags::R | MapAreaFlags::U, None);
         //映射用户堆
         let userheap_start_end_vpn = VirNumber(userstack_start_vpn.0+1);//无需guardpage，堆不会向下溢出
         debug!("  Mapping user heap: vpn={:#x}", userheap_start_end_vpn.0);
         memory_set.add_area(VirNumRange(userheap_start_end_vpn, userheap_start_end_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W | MapAreaFlags::U, None);
         //映射内核栈
         //debug!("Kernel stack start viadr:{:#x} appid:{}",TRAP_BOTTOM_ADDR-(PAGE_SIZE+PAGE_SIZE)*appid,appid);
-        let strat_adn_end_vpn =VirAddr(TRAP_BOTTOM_ADDR-(KERNEL_STACK_SIZE)*appid).strict_into_virnum();//隔了一个guardpage 
-        let kernel_stack_top =TRAP_BOTTOM_ADDR-(KERNEL_STACK_SIZE)*appid+PAGE_SIZE-16;//保命
+        let strat_kernel_vpn =VirAddr(TRAP_BOTTOM_ADDR-(PAGE_SIZE+KERNEL_STACK_SIZE)*appid).strict_into_virnum();//隔了一个guardpage 
+        let end_kernel_vpn=VirAddr(TRAP_BOTTOM_ADDR-((PAGE_SIZE+KERNEL_STACK_SIZE)*appid)+KERNEL_STACK_SIZE-PAGE_SIZE).strict_into_virnum();
+        let kernel_stack_top =TRAP_BOTTOM_ADDR-((PAGE_SIZE+KERNEL_STACK_SIZE)*appid)+KERNEL_STACK_SIZE;//保命
         //debug!("Kernel stack vpn:{}",strat_adn_end_vpn.0);
-        KERNEL_SPACE.lock().add_area(VirNumRange(strat_adn_end_vpn, strat_adn_end_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
+        KERNEL_SPACE.lock().add_area(VirNumRange(strat_kernel_vpn, end_kernel_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
         (
             memory_set,
             entry_point as usize,

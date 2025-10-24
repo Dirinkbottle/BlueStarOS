@@ -19,7 +19,6 @@ pub fn sys_call(id: usize, args: [usize; 3]) -> isize {
 
 
 
-
-pub fn sys_write(){
-    sys_call(SYS_WRITE, [0;3]);    
+pub fn sys_write(fd_type:usize,buffer_ptr:usize,buffer_len:usize)->isize{
+    sys_call(SYS_WRITE, [buffer_ptr,fd_type,buffer_len])
 }

@@ -8,17 +8,22 @@ pub const SYS_READ:usize=2;//stdin read系统调用
 
 ///id: 系统调用号
 ///args:接受1个usize参数
-pub fn syscall_handler(id:usize,arg:[usize;3]){//目前只支持3个参数
+///返回值：通过 x10 (a0) 寄存器返回给用户态
+pub fn syscall_handler(id:usize,arg:[usize;3]) -> isize {
     match id {
-        GET_TIME=>{
-
+        GET_TIME => {
+            0  // 暂未实现
         }
-        SYS_WRITE=>{
-            sys_write(arg[0] );
+        SYS_WRITE => {
+            ///bufferpoint fd_type buffer_len
+            sys_write(arg[0], arg[1], arg[2])
+           
         }
-        SYS_READ=>{
-            
+        SYS_READ => {
+            -1  // 暂未实现
         }
-        _=>{panic!("Unknow Syscall type!");}
+        _ => {
+            panic!("Unknown Syscall type: {}", id);
+        }
     }
 }

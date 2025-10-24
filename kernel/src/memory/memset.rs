@@ -198,8 +198,8 @@ impl MapSet {
         memory_set.add_area(VirNumRange(userheap_start_end_vpn, userheap_start_end_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W | MapAreaFlags::U, None);
         //映射内核栈
         //debug!("Kernel stack start viadr:{:#x} appid:{}",TRAP_BOTTOM_ADDR-(PAGE_SIZE+PAGE_SIZE)*appid,appid);
-        let strat_adn_end_vpn =VirAddr(TRAP_BOTTOM_ADDR-(PAGE_SIZE+PAGE_SIZE)*appid).strict_into_virnum();//隔了一个guardpage 
-        let kernel_stack_top =TRAP_BOTTOM_ADDR-(PAGE_SIZE+PAGE_SIZE)*appid+PAGE_SIZE-16;//保命
+        let strat_adn_end_vpn =VirAddr(TRAP_BOTTOM_ADDR-(KERNEL_STACK_SIZE)*appid).strict_into_virnum();//隔了一个guardpage 
+        let kernel_stack_top =TRAP_BOTTOM_ADDR-(KERNEL_STACK_SIZE)*appid+PAGE_SIZE-16;//保命
         //debug!("Kernel stack vpn:{}",strat_adn_end_vpn.0);
         KERNEL_SPACE.lock().add_area(VirNumRange(strat_adn_end_vpn, strat_adn_end_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
         (
@@ -270,8 +270,8 @@ impl MapSet {
         mem_set.map_traper();
 
         //映射代码段
-        let text_range = VirNumRange::new(VirAddr(skernel as usize), VirAddr(ekernel as usize));//range封装过
-        mem_set.add_area(text_range, MapType::Indentical,  MapAreaFlags::R | MapAreaFlags::X | MapAreaFlags::W,None);
+        let text_range = VirNumRange::new(VirAddr(stext as usize), VirAddr(etext as usize));//range封装过
+        mem_set.add_area(text_range, MapType::Indentical,  MapAreaFlags::R | MapAreaFlags::X  ,None);
 
 
         //映射rodata段

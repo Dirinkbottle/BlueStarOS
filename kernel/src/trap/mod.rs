@@ -31,9 +31,7 @@ pub struct TrapContext{
      pub trap_handler:usize,//36*8(sp)
 }
 
-extern "C" {
-    fn __kernel_trap_handler_ptr();  // trap.asm 中定义的 handler 地址存储位置
-}
+
 
 impl TrapContext {
     /// 初始化应用的 TrapContext,设置usersp
@@ -60,10 +58,10 @@ impl TrapContext {
     }
 }
 
-///设置sstatus的sie开启全局中断使能，设置sie寄存器的第五位（从0开始）开启具体时钟中断
+///设置sstatus的sie开启全局中断使能，设置sie寄存器的第五位（从0开始）开启具体时钟中断 关键雷区，在内核不开sie，仅仅设置stie，在第一个任务sret会恢复到sie上，从而开启中断
 pub fn enable_timer_interupt(){
     unsafe {
-     sstatus::set_sie();
+   //  sstatus::set_sie(); 先暂时不开内核全局中断使能  
      sie::set_stimer(); 
     }
     debug!("TIMER INTERUPT ENABLE!");
@@ -73,19 +71,11 @@ pub fn enable_timer_interupt(){
 
 pub fn set_kernel_trap_handler(){
     unsafe {
-        let handler_ptr=__kernel_trap_handler_ptr as usize;
         let hander_func=kernel_trap_handler as usize;
         let trap_entry = TRAP_BOTTOM_ADDR as usize;
-        core::ptr::write_volatile(handler_ptr as *mut usize, hander_func);
-        let verify_addr = core::ptr::read_volatile(handler_ptr as *mut usize);
-        if verify_addr != hander_func{
-        debug!("Handler function addr:    {:#x}", hander_func);
-        debug!("Handler verify addr:    {:#x}", verify_addr);
-            panic!("Trap set failed!");
-        }
         stvec::write(trap_entry, TrapMode::Direct);
         debug!("Kernel TrapHandler func addr    :{:#x}",hander_func);
-        debug!("Verify Kernel TrapHandler func addr    :{:#x}",verify_addr);
+
         debug!("Traper Set Success!");
     }
 }
@@ -100,20 +90,18 @@ pub fn set_kernel_forbid(){
 /// __switch 会跳转到这里，设置好 trap 环境后跳转到用户态
 #[no_mangle]
 pub extern "C" fn app_entry_point() {
-    //set_kernel_trap_handler();
-    let trap_cx_ptr = TRAP_CONTEXT_ADDR;
+    set_kernel_trap_handler();
     let user_satp = TASK_MANAER.get_current_stap();
     let restore_va = __kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR;
    // let restore_va = __kernel_refume as usize;
     // trace!("[kernel] trap_return: ..before return");
-   debug!("Welcome to app entry point!!!");
-   empty();
+   debug!("Welcome to app entry point!!! user_satp:{}",user_satp);
     unsafe {
         asm!(
             "fence.i",
             "jr {restore_va}",         // jump to new addr of __restore asm function
             restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,      // a0 = virt addr of Trap Context
+            in("a0") TRAP_CONTEXT_ADDR,      // a0 = virt addr of Trap Context
             in("a1") user_satp,        // a1 = phy addr of usr page table
             options(noreturn)
         );
@@ -121,22 +109,23 @@ pub extern "C" fn app_entry_point() {
 }
 
 
-#[no_mangle]
-pub extern "C" fn empty(){
-
-}
 
 use riscv::register::sepc;
 ///handler必须返回到trap里面去
-#[no_mangle]
 pub extern "C" fn kernel_trap_handler(){//内核专属trap（目前不应该被调用）
-    //set_kernel_forbid();
+    set_kernel_forbid();
     let scauses = scause::read();
     let sepc_val = sepc::read();
     let stval_val = stval::read();
+    let current_trapcx= TASK_MANAER.get_current_trapcx();
+    let a1=current_trapcx.x[17];
+    let a2 =[current_trapcx.x[10],current_trapcx.x[11],current_trapcx.x[12]];
         match scauses.cause(){
         Trap::Exception(Exception::UserEnvCall)=>{
-            panic!("User syscalled");
+            current_trapcx.sepc_entry_point += 4;
+            // 调用系统调用处理器，返回值存入 a0 (x10)
+            let ret = syscall_handler(a1, a2);
+            current_trapcx.x[10] = ret as usize;
         }
         Trap::Exception(Exception::IllegalInstruction)=>{
             panic!("User IllegalInstruction at {:#x}", sepc_val)
@@ -161,17 +150,11 @@ app_entry_point();//传入特定参数，返回回去
 }
 
 
-#[no_mangle]
 pub extern "C" fn kernel_traped_forbid(){//内核专属trap目前只支持时钟设置
 let scauses = scause::read();
-        match scauses.cause(){
-        Trap::Interrupt(Interrupt::SupervisorTimer)=>{
-            set_next_timeInterupt();
-        }
-        _=>{
-            panic!("Unknown trap from user: {:?}", scauses.cause())
-        }
-    }
+
+            panic!("UnSupport Kernel Trap: {:?}", scauses.cause())
+
 }
 
 global_asm!(include_str!("trap.asm"));

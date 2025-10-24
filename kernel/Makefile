@@ -5,6 +5,14 @@ KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
+# User program settings
+USER_DIR := ../user
+USER_TARGET := $(TARGET)
+USER_MODE := release
+USER_BIN ?= printf  # 可以通过 make USER_BIN=test_buffer 切换
+USER_ELF := $(USER_DIR)/target/$(USER_TARGET)/$(USER_MODE)/$(USER_BIN)
+KERNEL_USER_ELF := te.elf
+
 # Building mode argument
 ifeq ($(MODE), release)
 	MODE_ARG := --release
@@ -33,15 +41,29 @@ env:
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
 
+# Build user program and copy to kernel directory
+$(KERNEL_USER_ELF): $(USER_ELF)
+	@echo "Copying user program $(USER_BIN) to $(KERNEL_USER_ELF)"
+	@cp $(USER_ELF) $(KERNEL_USER_ELF)
+
+$(USER_ELF):
+	@echo "Building user program: $(USER_BIN)"
+	@cd $(USER_DIR) && cargo build --bin $(USER_BIN) --release --target $(USER_TARGET)
+
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-kernel:
+kernel: $(KERNEL_USER_ELF)
 	@echo Platform: $(BOARD)
 	@cargo build $(MODE_ARG)
 
 clean:
 	@cargo clean
+	@cd $(USER_DIR) && cargo clean
+	@rm -f $(KERNEL_USER_ELF)
+
+# Convenience target to build only user program
+user: $(KERNEL_USER_ELF)
 
 disasm: kernel
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
@@ -72,4 +94,4 @@ gdbserver: build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean disasm disasm-vim run-inner gdbserver gdbclient
+.PHONY: build env kernel clean user disasm disasm-vim run-inner gdbserver gdbclient $(USER_ELF)

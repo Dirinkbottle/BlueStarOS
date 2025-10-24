@@ -1,9 +1,9 @@
 #任务切换
 .altmacro
-.macro SAVE_GP n 
+.macro SAVE_GPN n 
     sd s\n,(\n+2)*8(a0)
 .endm
-.macro REFUME_GP n 
+.macro REFUME_GPN n 
     ld s\n,(\n+2)*8(a1)
 .endm
 
@@ -15,7 +15,7 @@ __switch:
     sd sp,8(a0)
     .set n , 0
 .rept 12
-    SAVE_GP %n
+    SAVE_GPN %n
     .set n ,n+1
 .endr
 
@@ -23,7 +23,7 @@ __switch:
 #恢复执行任务
 .set n,0
 .rept 12
-    REFUME_GP %n
+    REFUME_GPN %n
     .set n,n+1
 .endr
     ld ra,(a1)

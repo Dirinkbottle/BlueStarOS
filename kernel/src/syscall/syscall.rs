@@ -1,11 +1,12 @@
 
 use core::mem::size_of;
 use alloc::vec::Vec;
-use log::error;
+use log::{debug, error};
 
 use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, task::TASK_MANAER, time::{TimeVal, get_time_ms}};
 
-
+const FD_TYPE_STDIN:usize=1;
+const FD_TYPE_STDOUT:usize=2;
 
 
 
@@ -49,27 +50,28 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
 
 
 ///这个指针是用户空间的指针，应该解地址
-pub fn sys_write(source_buffer:usize){//用户空间缓冲数组，应该以\0结束
-   panic!("Syscalled sys_write!!!");
+pub fn sys_write(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{//用户空间缓冲数组，应该以\0结束
+  match fd_target {
+      FD_TYPE_STDOUT=>{
 
+         debug!("current task satp:{:#x},source buffer:{:#x} buffer_len:{}",TASK_MANAER.get_current_stap(),source_buffer,buffer_len);
 
+         let buffer = PageTable::get_mut_slice_from_satp(TASK_MANAER.get_current_stap(), buffer_len, VirAddr(source_buffer));
 
-   
-   let task_satp= TASK_MANAER.get_current_stap();
-   let task_table_mut_pointer = PageTable::crate_table_from_satp(task_satp);
-   let mut task_pagetable = unsafe {
-       &mut *task_table_mut_pointer
-   };
-   let mut page_start_phyaddr= task_pagetable.get_mut_byte(VirAddr(source_buffer).floor_down()).expect("Error source buffer!!");
-   let phy_offset=VirAddr(source_buffer).offset();
-   let last_physlice = &mut page_start_phyaddr[phy_offset..];
-   let mut buffer:Vec<u8>=Vec::new();
-   last_physlice.iter().for_each(|cha|{
-      if *cha != b'|'{
-         buffer.push(*cha);
+         let len=buffer.len();
+         for i in buffer{
+               print!("{}",core::str::from_utf8(i).expect("Ilegal utf8 char!"));
+         }
+         return len as isize;
       }
-   });
-
+      FD_TYPE_STDIN=>{
+         return -1;
+      }
+      _=>{
+         panic!("Unsupport fd_type");
+      }
+  }
+  
 }
 
 

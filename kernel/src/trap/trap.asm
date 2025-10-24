@@ -11,7 +11,6 @@
 .section .text.traper
     .global __kernel_trap
     .global __kernel_refume
-    .global __kernel_trap_handler_ptr
 
 #x权限硬性要求对齐，确保 __kernel_trap 在段的开始处
 .align 4
@@ -81,9 +80,3 @@ ld x3,3*8(sp)
 ld x2,2*8(sp) #最后恢复sp为user普通栈指针
 sret
 #回到触发异常的那条指令
-
-#在trap代码段末尾存储handler地址（8字节对齐）
-.align 3
-__kernel_trap_handler_ptr:
-    .dword 0
-

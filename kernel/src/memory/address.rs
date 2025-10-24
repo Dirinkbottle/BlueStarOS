@@ -10,11 +10,11 @@ use alloc::vec::Vec;
 use alloc::vec;
 #[derive(Debug,Clone,Copy,PartialEq, Eq, PartialOrd, Ord)]
 pub struct VirNumber(pub usize);
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq, Eq, PartialOrd, Ord)]
 pub struct PhysiNumber(pub usize);
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq, Eq, PartialOrd, Ord)]
 pub struct VirAddr(pub usize);
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq, Eq, PartialOrd, Ord)]
 pub struct PhysiAddr(pub usize);
 #[derive(Debug,Clone,Copy)]
 #[repr(C)]
@@ -99,7 +99,7 @@ impl VirAddr {
         VirNumber(addr/PAGE_SIZE)//直接截断
     }
     pub fn offset(&self)->usize{
-        self.0 & (PAGE_SIZE-1) 
+        self.0 % PAGE_SIZE
     }
     ///不裁剪对齐转化 要求地址必须对齐
     pub fn strict_into_virnum(&self)->VirNumber{
@@ -155,34 +155,79 @@ impl PageTable {
         }
     }
 
+    ///根据起始虚拟地址，从satp和vpn和len获取可变的u8数组
+    pub fn get_mut_slice_from_satp(satp:usize,len:usize,startAddr:VirAddr)->Vec<&'static mut [u8]>{
+        let mut start_addr = startAddr;
+        let end_addr = VirAddr(start_addr.0 + len);
+        let table = unsafe {
+            &mut *PageTable::crate_table_from_satp(satp)
+        };
+
+        let mut result_v = Vec::new();
+        debug!("Ponit 1");
+        while start_addr < end_addr {
+            // 获取当前地址所在的页
+            let start_vpn = start_addr.floor_down();
+            let source_slice = table.get_mut_byte(start_vpn.into())
+                .expect("Get VPN to RealAddr failed");
+        debug!("Ponit 2");
+            // 计算当前页的结束地址
+            let mut page_end_addr: VirAddr = VirNumber(start_vpn.0 + 1).into();
+            // 取当前页结束地址和总结束地址的最小值
+            let real_end_addr = page_end_addr.min(end_addr);
+            
+            // 计算当前页内需要的字节数
+            let start_offset = start_addr.offset();
+            let end_offset = if real_end_addr.0 / PAGE_SIZE == start_vpn.0 {
+                // 数据在同一页内
+                real_end_addr.offset()
+            } else {
+                // 数据跨页，读取到页面结尾
+                PAGE_SIZE
+            };
+            
+            result_v.push(&mut source_slice[start_offset..end_offset]);
+            start_addr = real_end_addr;
+        }
+        debug!("Ponit 3");
+
+        result_v
+    }
+
     ///从给定的satp中创建临时新页表 临时使用物理ppn为粗略提取
     pub fn crate_table_from_satp(satp:usize)->*mut PageTable{
-        let ppn =satp & 0xffffffffff;
+        let ppn =satp & ((1<<44)-1);
         (ppn*PAGE_SIZE )as *mut PageTable
     }
 
     pub fn get_current_pagetable()->*mut PageTable{
-        let ppn=satp::read().bits() & 0xffffffffffe;//44位 ppn掩码
+        let ppn=satp::read().bits() & ((1<<44)-1);//44位 ppn掩码
         (ppn*PAGE_SIZE) as *mut PageTable//转换为当前页表
     }
 
     ///根据vpn获取该页的可变数组切片,获取从物理页开头的地址切片
     pub fn get_mut_byte(&mut self,vpn:VirNumber)->Option<&'static mut [u8;PAGE_SIZE]>{//防止跨页
+
         let phydr=self.translate(vpn.into()).expect("Virtual Address translate to Physical Adress Failed!");
         unsafe {
            Some(core::slice::from_raw_parts_mut(phydr.0 as  *mut u8, PAGE_SIZE).try_into().expect("GET_MUT_BYTE FAILED TO TRY TRANSLATE A  POINTER TO STATIC PAGESIZE")) 
         }
     }
 
+
+
     ///专注翻译完整虚拟地址带偏移,结束地址不考虑是否对齐,使用者肯定
     pub fn translate(&mut self,VDDR:VirAddr)->Option<PhysiAddr>{
+
         match self.find_pte_vpn(VDDR.into()){
             Some(pte)=>{
+                
                 let ppn=pte.ppn();
                 let addr=(ppn.0*PAGE_SIZE)+VDDR.offset();//不考虑是否对齐,使用者肯定
                 Some(PhysiAddr(addr))
             }
             None=>{
+
                 None
             }
         }
@@ -190,8 +235,10 @@ impl PageTable {
 
     ///专注于通过vpn翻译,返回ppn号
     pub fn translate_byvpn(&mut self,vpn:VirNumber)->Option<PhysiNumber>{
+                debug!("Point 5");
         match self.find_pte_vpn(vpn.into()){
             Some(pte)=>{
+
                 let ppn=pte.ppn();
                 Some(ppn)
             }
@@ -216,7 +263,7 @@ impl PageTable {
 
             let entry=&mut pte_array[*index];
                         
-                 if id==2{//最后一级
+                if id==2{//最后一级
                     return Some(entry);
                 }
             if !entry.is_valid(){

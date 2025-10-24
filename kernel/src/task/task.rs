@@ -107,7 +107,6 @@ impl TaskManager {//全局唯一
     }
     ///根据Stride挑选下个要运行的任务
 
-    #[no_mangle]
     pub fn run_first_task(&self) -> ! {
       let mut inner=self.task_que_inner.lock();//记得drop
       let curren_task_index=inner.current;
@@ -133,7 +132,21 @@ impl TaskManager {//全局唯一
         let current_task:usize=inner.current;
         let  task_memset = &mut inner.task_queen[current_task].memory_set;
         let stap = task_memset.get_table().satp_token();
+        drop(inner);
         stap
+    }
+
+    ///获取当前任务的陷阱上下文可变引用
+    pub fn get_current_trapcx(&self)->&mut TrapContext{
+        let inner =self.task_que_inner.lock();
+        let curren_task_index=inner.current;
+        let task_trap_ppn = inner.task_queen[curren_task_index].trap_context_ppn;
+        let origin_phyaddr =( task_trap_ppn*PAGE_SIZE) as *mut TrapContext;
+        let trap_context =unsafe {
+            &mut *origin_phyaddr
+        };
+        drop(inner);
+        trap_context
     }
 
 }

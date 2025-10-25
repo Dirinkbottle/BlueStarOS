@@ -1,0 +1,4 @@
+kernel/target
+user/target
+.vscode
+*.elf

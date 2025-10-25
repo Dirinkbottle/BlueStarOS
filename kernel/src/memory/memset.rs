@@ -2,11 +2,13 @@ use alloc::collections::btree_map::BTreeMap;
 use bitflags::bitflags;
 use alloc::vec::Vec;
 use log::{debug, error, trace};
+use riscv::paging::PTE;
 use core::arch::asm;
     use riscv::register::satp;
     use crate::task::file_loader;
 
 use crate::{config::*, memory::{address::*, alloc_frame, frame_allocator::FramTracker}};
+use crate::trap::no_return_start;
 use crate::trap::TrapFunction;
 ///开始和结束，一个范围,自动[start,end] start地址自动向下取整，end也向下取整，因为virnumrange用于代码映射，防止代码缺失, startva/PAGE =num+offset ,从num开始，endva/pagesize=endva+offset由于闭区间所以向下取整,防止多映射
 pub struct VirNumRange(pub VirNumber,pub VirNumber);
@@ -203,6 +205,7 @@ impl MapSet {
         let end_kernel_vpn=VirAddr(TRAP_BOTTOM_ADDR-((PAGE_SIZE+KERNEL_STACK_SIZE)*appid)+KERNEL_STACK_SIZE-PAGE_SIZE).strict_into_virnum();
         let kernel_stack_top =TRAP_BOTTOM_ADDR-((PAGE_SIZE+KERNEL_STACK_SIZE)*appid)+KERNEL_STACK_SIZE;//保命
         //debug!("Kernel stack vpn:{}",strat_adn_end_vpn.0);
+    
         KERNEL_SPACE.lock().add_area(VirNumRange(strat_kernel_vpn, end_kernel_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
         (
             memory_set,
@@ -238,6 +241,17 @@ impl MapSet {
         let trapcontext_addr:VirAddr = VirAddr(TRAP_CONTEXT_ADDR);
         self.add_area(VirNumRange(trapcontext_addr.strict_into_virnum(), trapcontext_addr.strict_into_virnum()), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
     }
+
+    ///目前不可用
+    ///映射特殊用户库没返回的情况，可以直接切换任务或者panic，保证内核稳定,目前就在TrapContext后面巴，如果后续报错，则需要特殊处理。！！！！！！！！！！！！！！！！！！！！！！
+    ///只映射了处理函数一个页，可能不够 目前不能用
+   // pub fn map_user_start_return(&mut self){
+     //   let userlib_start_retunr:usize=USERLIB_START_RETURN_HIGNADDR;
+       // let map_vnumber=VirAddr(userlib_start_retunr).strict_into_virnum();//严格对齐
+        //let start_return_phyaddr =PhysiAddr(no_return_start as usize).floor_down();
+        //self.table.map(map_vnumber, start_return_phyaddr, PTEFlags::U | PTEFlags::X | PTEFlags::R);//用户唯一可以访问的高地址
+
+   // }
 
 
     ///取消映射一个页面，通过该地址空间唯一的vpn查找

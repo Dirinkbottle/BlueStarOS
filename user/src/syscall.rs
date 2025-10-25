@@ -1,5 +1,5 @@
-pub const  SYS_WRITE:usize = 1;
-
+const SYS_WRITE:usize = 1;//write系统调用
+const SYS_EXIT:usize=3;//exit程序结束，运行下一个程序
 
 
 ///syscall封装 3个参数版本
@@ -21,4 +21,8 @@ pub fn sys_call(id: usize, args: [usize; 3]) -> isize {
 
 pub fn sys_write(fd_type:usize,buffer_ptr:usize,buffer_len:usize)->isize{
     sys_call(SYS_WRITE, [buffer_ptr,fd_type,buffer_len])
+}
+
+pub fn sys_exit(exit_code:usize){//sys_exit
+    sys_call(SYS_EXIT, [exit_code,0,0]);
 }

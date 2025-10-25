@@ -49,12 +49,12 @@ pub fn kernel_init(){
 }
 /// the rust entry-point of os
 #[no_mangle]
-pub fn blue_main() -> ! {
+pub fn blue_main() -> ! {//永远不会返回
     kernel_init(); //bss，日志，分配器初始化
     set_kernel_trap_handler();//初始化陷阱入口，应该在地址空间激活前开启
     KERNEL_SPACE.lock().activate();//激活地址空间
-   // enable_timer_interupt();//开启全局时间中断使能
-    //set_next_timeInterupt();//第一次开启时钟中断
+    //enable_timer_interupt();//开启全局时间中断使能
+   // set_next_timeInterupt();//第一次开启时钟中断
     // kernel_space.translate_test();
     warn!("All right,kernel Will end\n");
     debug!("stext {:#x}",__kernel_trap as usize);

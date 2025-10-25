@@ -69,3 +69,19 @@ pub fn sys_write(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{//
 }
 
 
+///exit系统调用，一般main程序return后在这里处理退出码，目前为简便panic实现
+pub fn sys_exit(exit_code:usize)->isize{
+//程序return的返回码在这里进行判断和处理,目前全部都认为panic
+
+
+   match exit_code{
+      0=>{
+         panic!("Program Exit Normaly With Code:{}",exit_code)
+      }
+      _=>{
+         panic!("Program Exit with code:{}",exit_code);
+      }
+   }
+}
+
+

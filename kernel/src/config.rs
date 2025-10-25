@@ -43,9 +43,11 @@ pub const CPU_CIRCLE:usize=12_500_000;
 pub const TRAP_BOTTOM_ADDR:usize=usize::MAX-PAGE_SIZE+1;
 ///每个app的trap context (高地址)
 pub const TRAP_CONTEXT_ADDR:usize=TRAP_BOTTOM_ADDR-PAGE_SIZE;
-pub const HIGNADDRESS_MASK:usize=0xFFFFFFE000000000;//0xFFFFFFFFFFFFF000
+///用户start函数在用户地址空间的起始映射地址，不携带页帧，直接操作页表映射 D
+pub const USERLIB_START_RETURN_HIGNADDR:usize=TRAP_CONTEXT_ADDR-PAGE_SIZE;
+pub const HIGNADDRESS_MASK:usize=0xFFFFFFE000000000;//0xFFFFFFFFFFFFF000 hb *0xfffffffffffff070
 ///每秒多少次时钟中断
-pub const TIME_FREQUENT:usize=900;
+pub const TIME_FREQUENT:usize=100;
 
 
 ///任务初始ticket(优先级)

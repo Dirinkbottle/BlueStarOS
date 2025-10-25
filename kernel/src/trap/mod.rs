@@ -1,5 +1,5 @@
 
-use core::{arch::global_asm, panic};
+use core::{arch::global_asm, panic, panicking::panic};
 use crate::{config::*, task::TASK_MANAER, time::set_next_timeInterupt};
 use log::{debug, error, };
 use riscv::register::{scause::{self, Exception, Trap}, sie::Sie, sscratch, sstatus::{self, SPP, Sstatus}, stval, stvec, utvec::TrapMode};
@@ -47,6 +47,7 @@ impl TrapContext {
         let mut register = [0; 32];
         //x2
         register[2]=user_sp;
+        register[1]=no_return_start as usize;
         TrapContext {
             x: register,               // 通用寄存器初始化为 0，x[2](sp) 会在外部设置
             sstatus,
@@ -92,6 +93,7 @@ pub extern "C" fn app_entry_point() {
     set_kernel_trap_handler();
     let user_satp = TASK_MANAER.get_current_stap();
     let restore_va = __kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR;
+    //error!("Resrore_va:{:#x}",restore_va);
    // let restore_va = __kernel_refume as usize;
     // trace!("[kernel] trap_return: ..before return");
    //debug!("Welcome to app entry point!!! user_satp:{:#x}",user_satp);
@@ -150,6 +152,9 @@ pub extern "C" fn kernel_trap_handler(){//内核专属trap（目前不应该被�
 app_entry_point();//传入特定参数，返回回去
 }
 
+pub fn no_return_start()->!{
+panic("Start Function you ret ,WTF????");
+}
 
 pub extern "C" fn kernel_traped_forbid(){//内核专属trap目前只支持时钟设置
 let scauses = scause::read();

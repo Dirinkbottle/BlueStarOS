@@ -76,6 +76,7 @@ pub fn sys_exit(exit_code:usize)->isize{
 
    match exit_code{
       0=>{
+         TASK_MANAER.suspend_and_run_task();
          panic!("Program Exit Normaly With Code:{}",exit_code)
       }
       _=>{

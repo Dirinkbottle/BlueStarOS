@@ -9,9 +9,12 @@ DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 USER_DIR := ../user
 USER_TARGET := $(TARGET)
 USER_MODE := release
-USER_BIN ?= printf  # 可以通过 make USER_BIN=test_buffer 切换
-USER_ELF := $(USER_DIR)/target/$(USER_TARGET)/$(USER_MODE)/$(USER_BIN)
-KERNEL_USER_ELF := te.elf
+USER_BIN_DIR := $(USER_DIR)/src/bin
+USER_TARGET_DIR := $(USER_DIR)/target/$(USER_TARGET)/$(USER_MODE)
+
+# 自动发现所有用户程序
+USER_APPS := $(basename $(notdir $(wildcard $(USER_BIN_DIR)/*.rs)))
+USER_ELFS := $(foreach app,$(USER_APPS),$(USER_TARGET_DIR)/$(app))
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -41,29 +44,55 @@ env:
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
 
-# Build user program and copy to kernel directory
-$(KERNEL_USER_ELF): $(USER_ELF)
-	@echo "Copying user program $(USER_BIN) to $(KERNEL_USER_ELF)"
-	@cp $(USER_ELF) $(KERNEL_USER_ELF)
+# Python script to generate app.asm
+APP_ASM_SCRIPT := build_apps.py
+APP_ASM := src/app.asm
 
-$(USER_ELF):
-	@echo "Building user program: $(USER_BIN)"
-	@cd $(USER_DIR) && cargo build --bin $(USER_BIN) --release --target $(USER_TARGET)
+# Generate app.asm from user programs
+$(APP_ASM): $(USER_BIN_DIR)/*.rs
+	@echo "==> Generating app.asm from user programs..."
+	@python3 $(APP_ASM_SCRIPT)
 
+# Build all user programs
+user-apps: $(USER_ELFS)
+
+$(USER_ELFS): $(USER_BIN_DIR)/*.rs
+	@echo "==> Building all user programs..."
+	@cd $(USER_DIR) && cargo build --release --target $(USER_TARGET)
+	@echo "✓ Built $(words $(USER_APPS)) user program(s): $(USER_APPS)"
+
+# Build kernel binary
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-kernel: $(KERNEL_USER_ELF)
-	@echo Platform: $(BOARD)
+# Build kernel (depends on user apps and app.asm)
+kernel: $(APP_ASM) user-apps
+	@echo "==> Building kernel..."
+	@echo "    Platform: $(BOARD)"
+	@echo "    Mode: $(MODE)"
 	@cargo build $(MODE_ARG)
+	@echo "✓ Kernel built successfully"
 
 clean:
+	@echo "==> Cleaning build artifacts..."
 	@cargo clean
 	@cd $(USER_DIR) && cargo clean
-	@rm -f $(KERNEL_USER_ELF)
+	@rm -f $(APP_ASM)
+	@echo "✓ Clean complete"
 
-# Convenience target to build only user program
-user: $(KERNEL_USER_ELF)
+# Convenience targets
+user: user-apps
+	@echo "✓ All user programs built"
+
+# List all discovered user applications
+list-apps:
+	@echo "Discovered user applications:"
+	@echo "$(USER_APPS)" | tr ' ' '\n' | nl
+
+# Force regenerate app.asm
+regen-asm:
+	@rm -f $(APP_ASM)
+	@$(MAKE) $(APP_ASM)
 
 disasm: kernel
 	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
@@ -80,7 +109,7 @@ run-inner: build
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
-		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s 
+		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s  
 
 debug: build
 	@tmux new-session -d \
@@ -94,4 +123,4 @@ gdbserver: build
 gdbclient:
 	@riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'
 
-.PHONY: build env kernel clean user disasm disasm-vim run-inner gdbserver gdbclient $(USER_ELF)
+.PHONY: build env kernel clean user user-apps disasm disasm-vim run-inner gdbserver gdbclient list-apps regen-asm

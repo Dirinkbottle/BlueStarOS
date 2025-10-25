@@ -6,6 +6,6 @@ extern crate user_lib;
 
 #[no_mangle]
 pub fn main(_argc:usize,_argv:&[&str])->usize{
-    println!("Hello,World!,This a sys_write test");
+    println!("If you see this ,switch is runing Success!");
     return 0;
 }

@@ -69,28 +69,43 @@ impl TaskContext {
 }
 
 impl TaskControlBlock {
-    ///创建第一个任务 appid用于创建内核栈的，目前为为1,承担trapcontext初始化任务
-    fn new(app_id: usize)->Self{
-        let elf_data=file_loader();
-        let (mut memset,elf_entry,user_ap,kernel_sp) = MapSet::from_elf(app_id,elf_data);
+    /// 创建新任务
+    /// app_id: 应用程序ID（从0开始，用于加载不同的ELF文件）
+    /// kernel_stack_id: 内核栈ID（从1开始，用于分配不同的内核栈空间）
+    fn new(app_id: usize, kernel_stack_id: usize) -> Self {
+        debug!("Creating task for app_id: {}, kernel_stack_id: {}", app_id, kernel_stack_id);
+        
+        let elf_data = file_loader(app_id);
+        let (mut memset, elf_entry, user_sp, kernel_sp) = MapSet::from_elf(kernel_stack_id, elf_data);
         let task_cx = TaskContext::return_trap_new(kernel_sp);
-        let kernel_satp=KERNEL_SPACE.lock().table.satp_token();
-        let trap_cx_ppn = memset.table.translate_byvpn(VirAddr(TRAP_CONTEXT_ADDR).strict_into_virnum()).expect("trap ppn transalte failed");
-        let task_control_block=TaskControlBlock{
-            memory_set:memset,
-            task_statut:TaskStatus::Ready,
-            task_context:task_cx,
-            trap_context_ppn:trap_cx_ppn.0,
-            pass:0,
-            stride:BIG_INT/TASK_TICKET,
-            ticket:TASK_TICKET
+        let kernel_satp = KERNEL_SPACE.lock().table.satp_token();
+        let trap_cx_ppn = memset.table
+            .translate_byvpn(VirAddr(TRAP_CONTEXT_ADDR).strict_into_virnum())
+            .expect("trap ppn translate failed");
+        
+        let task_control_block = TaskControlBlock {
+            memory_set: memset,
+            task_statut: TaskStatus::Ready,
+            task_context: task_cx,
+            trap_context_ppn: trap_cx_ppn.0,
+            pass: 0,
+            stride: BIG_INT / TASK_TICKET,
+            ticket: TASK_TICKET
         };
-        let trap_cx_point:*mut TrapContext = (trap_cx_ppn.0 * PAGE_SIZE) as *mut TrapContext;
-        // 设置trap地址
+        
+        // 初始化 TrapContext
+        let trap_cx_point: *mut TrapContext = (trap_cx_ppn.0 * PAGE_SIZE) as *mut TrapContext;
         unsafe {
-            //traphandler应该传trapline高地址
-            *trap_cx_point=TrapContext::init_app_trap_context(elf_entry, kernel_satp,kernel_trap_handler as usize , kernel_sp,user_ap.0)
+            *trap_cx_point = TrapContext::init_app_trap_context(
+                elf_entry,
+                kernel_satp,
+                kernel_trap_handler as usize,
+                kernel_sp,
+                user_sp.0
+            );
         }
+        
+        debug!("Task created successfully: entry={:#x}, user_sp={:#x}", elf_entry, user_sp.0);
         task_control_block
     }
 }
@@ -101,18 +116,59 @@ impl TaskManager {//全局唯一
     pub fn add_task(&mut self,task:TaskControlBlock){
         self.task_que_inner.lock().task_queen.push_back(task);
     }
-    ///从队列移除任务
-    pub fn remove_task(&mut self){
+    ///从队列移除任务,应该由aplication的exit系统调用来执行
+    pub fn remove_task(&mut self,app_index:usize){
 
     }
-    ///根据Stride挑选下个要运行的任务
+    ///根据Stride挑选下个要运行的READY任务,挂起当前任务,把current设置为下个任务的index,然后运行下一个任务
+    pub fn suspend_and_run_task(&self){
+        let mut inner  =self.task_que_inner.lock();
+        let current=inner.current;
+        //标记当前任务为BLOCK
+        inner.task_queen[current].task_statut=TaskStatus::Blocking;
 
+        let task_index=match inner.task_queen.
+        iter().
+        enumerate().
+        filter(|(_,block)|{if let TaskStatus::Ready=block.task_statut {true}else {
+            false
+        }}).
+        min_by_key(|(_,block)|{
+            block.pass
+        }){
+            Some((index,_))=>{
+                index//返回任务的下标索引
+            }
+            None=>{
+                panic!("No task can run!");
+            }
+        };
+        //标记这个任务为run
+        let swaped_task_cx=&inner.task_queen[current].task_context as *const TaskContext;
+        let task=&mut inner.task_queen[task_index];
+        task.task_statut=TaskStatus::Runing;
+        let need_swap_in = &mut task.task_context as *mut TaskContext;
+        debug!("current:{} Next task:{}",inner.current,task_index);
+        inner.current=task_index;//更新任务指针
+        drop(inner);//drop inner
+        unsafe {
+         __switch(swaped_task_cx , need_swap_in);
+        }
+        panic!("unreachable!!");
+
+        //设置下一个任务的运行状态
+    }
+
+
+    ///运行第一个任务
     pub fn run_first_task(&self) -> ! {
       let mut inner=self.task_que_inner.lock();//记得drop
       let curren_task_index=inner.current;
-      let mut task = &mut inner.task_queen[curren_task_index];
+      let task = &mut inner.task_queen[curren_task_index];
       let task_cx_ptr = &mut task.task_context as *mut TaskContext;
       let kernel_task_cx=TaskContext::zero_init();
+      //标记为running
+      task.task_statut=TaskStatus::Runing;
       drop(inner);//越早越好
       // 调用 __switch 切换到第一个任务
       // __switch 会：
@@ -159,23 +215,34 @@ impl TaskContext {
     }
 }
 
-///全局任务管理器 初始只有一个任务
-lazy_static!{
-     pub static ref TASK_MANAER:TaskManager=unsafe {
+/// 全局任务管理器，加载所有应用程序
+lazy_static! {
+    pub static ref TASK_MANAER: TaskManager = unsafe {
         debug!("Initializing TASK_MANAGER...");
-        let mut task_deque=VecDeque::new();
-        let task=TaskControlBlock::new(1);//初始化第一个任务block，app_id=1
-        task_deque.push_back(task);
-        debug!("First task added to queue");
-        TaskManager{
-            task_que_inner:UPSafeCell::new(
-            TaskManagerInner{
-                task_queen:task_deque,
-                current:0//初始化为第一个任务
-              }
-            )
-        }   
-     };
+        let app_count = crate::task::get_app_count();
+        debug!("Found {} applications to load", app_count);
+        
+        let mut task_deque = VecDeque::new();
+        
+        // 加载所有应用程序
+        for app_id in 0..app_count {
+            debug!("Loading application {}...", app_id);
+            // app_id 从 0 开始，kernel_stack_id 从 1 开始
+            let mut task = TaskControlBlock::new(app_id, app_id + 1);
+            //task.task_statut=TaskStatus::Ready; 在new已经设置为ready
+            task_deque.push_back(task);
+            debug!("Application {} loaded successfully", app_id);
+        }
+        
+        debug!("All {} applications loaded into task queue", app_count);
+        
+        TaskManager {
+            task_que_inner: UPSafeCell::new(TaskManagerInner {
+                task_queen: task_deque,
+                current: 0  // 初始化为第一个任务
+            })
+        }
+    };
 }
 ///返回单个app的内核栈地址（在内核地址空间）
 pub fn getapp_kernel_sapce()->usize{

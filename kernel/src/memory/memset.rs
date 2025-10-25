@@ -147,8 +147,9 @@ impl MapSet {
 
     ///TODO:
     ///从elf解析数据创建应用地址空间 Mapset entry user_stack,kernel_sp心智空间有限，姑且这样吧,外部库不值得研究，内核全部完成后自己实现xmas.映射trap，trapcontext，userstack，kernelstack，userheap。
-    /// appid从1开始
-    pub fn from_elf(appid:usize,elf_data:&[u8])->(Self,usize,VirAddr,usize){ 
+    /// appid从0开始，必须手动+1
+    pub fn from_elf(old_appid:usize,elf_data:&[u8])->(Self,usize,VirAddr,usize){ 
+        let appid=old_appid+1;//适配之前的栈布局
         let mut memory_set = Self::new_bare();
         // map program headers of elf, with U flag
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();

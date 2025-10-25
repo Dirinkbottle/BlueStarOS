@@ -29,6 +29,10 @@ extern "C"{
         pub fn kernel_trap_run_stack_top();
         ///内核的trap独立运行栈 栈底
         pub fn kernel_trap_run_stack_bottom();
+        ///应用列表起始地址
+        pub fn app_list_start();
+        ///应用列表结束地址
+        pub fn app_list_end();
 }
 ///MB的简单封装
 pub const  MB:usize=1024*1024;
@@ -61,4 +65,37 @@ lazy_static!{
         pub static ref KERNEL_SPACE:UPSafeCell<MapSet> =unsafe {
             UPSafeCell::new( MapSet::new_kernel())//内核地址空间，必须持有,从来不会丢弃
         };
+}
+
+/// 获取应用程序数量
+pub fn get_app_num() -> usize {
+    unsafe {
+        let app_list_start_addr = app_list_start as usize;
+        let app_list_end_addr = app_list_end as usize;
+        // 每个应用占用2个usize（start和end地址）
+        (app_list_end_addr - app_list_start_addr) / (core::mem::size_of::<usize>() * 2)
+    }
+}
+
+/// 获取第 app_id 个应用的数据切片（app_id 从 0 开始）
+pub fn get_app_data(app_id: usize) -> &'static [u8] {
+    let app_num = get_app_num();
+    if app_id >= app_num {
+        panic!("Application id {} out of range! Total apps: {}", app_id, app_num);
+    }
+    
+    unsafe {
+        let app_list_start_addr = app_list_start as usize;
+        // 应用列表是一个 usize 数组，存储每个应用的起始和结束地址
+        let app_list = core::slice::from_raw_parts(
+            app_list_start_addr as *const usize,
+            app_num * 2
+        );
+        
+        let app_start_addr = app_list[app_id * 2];
+        let app_end_addr = app_list[app_id * 2 + 1];
+        let app_size = app_end_addr - app_start_addr;
+        
+        core::slice::from_raw_parts(app_start_addr as *const u8, app_size)
+    }
 }

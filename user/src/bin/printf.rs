@@ -5,7 +5,7 @@ use user_lib::{print,println};
 extern crate user_lib;
 
 #[no_mangle]
-pub fn main(_argc:usize,_argv:&[&str])->usize{
+pub fn main()->usize{
     println!("Hello,World!,This a sys_write test");
     return 0;
 }

@@ -1,17 +1,19 @@
 use core::fmt::{self, Write};
-use alloc::{collections::vec_deque::VecDeque, sync::Arc};
+use alloc::{collections::vec_deque::VecDeque, sync::Arc, vec::Vec};
 use spin::mutex::Mutex;
 use lazy_static::lazy_static;
 use crate::{sys_write};
 
-const FD_TYPE_STDIN: usize = 1;
-const FD_TYPE_STDOUT: usize = 2;
+pub const FD_TYPE_STDIN: usize = 1;
+pub const FD_TYPE_STDOUT: usize = 2;
 const BUFFER_SIZE: usize = 256 * 10;
 
 struct STDIN;
 struct STDOUT;
+pub struct StdinBuffer{
+   pub buffer:Vec<u8>
+}
 
-// 使用静态数组代替 VecDeque，避免在 lazy_static 初始化时进行堆分配
 struct STDBUFFER(VecDeque<u8>);
 // 使用 static 和 Mutex，避免 lazy_static 的初始化死锁
 lazy_static!{
@@ -24,6 +26,14 @@ impl STDBUFFER {
         let resultcode =sys_write(FD_TYPE_STDOUT, buffer.as_ptr() as usize, buffer.len());
         self.0.clear();
         resultcode as isize
+    }
+}
+
+impl StdinBuffer {
+    pub fn new(len:usize)->Self{
+       StdinBuffer{
+        buffer:Vec::with_capacity(len)
+       }
     }
 }
 
@@ -44,15 +54,37 @@ impl Write for STDBUFFER {
     }
 }
 
-pub fn print(fmt: fmt::Arguments) {
+
+///手动刷新buffer，用于处理不能达到自动flush的情况
+pub fn stdout_buffer_flush(){
+    //获取锁
+    if let Some(mut locak) = STD_BUFFER.try_lock(){
+        locak.flush();
+        drop(locak);
+    }
+    panic!("locaked!")
+
+}
+
+pub fn print(fmt: fmt::Arguments,flush:bool) {
     // 不使用 expect()，避免在 panic handler 中再次获取锁导致死锁
-    let _ = STD_BUFFER.lock().write_fmt(fmt);
+    if let Some(mut buffer) =STD_BUFFER.try_lock(){
+       let _ = buffer.write_fmt(fmt);
+       drop(buffer);//释放锁
+        if flush{
+            stdout_buffer_flush();//手动刷新缓冲区的情况
+        }
+       return;
+    }
+
+    panic!("locaked!")
 }
 
 #[macro_export]
 macro_rules! print {
     ($lit:literal $(,$($arg:tt)+)?) => {
-        crate::print(format_args!($lit $(,$($arg)+)?))
+        //手动flush，不然缓冲区不满，没有\n不会输出
+        crate::print(format_args!($lit $(,$($arg)+)?),true)
     };
 }
 
@@ -60,6 +92,6 @@ macro_rules! print {
 #[macro_export]
 macro_rules! println {
     ($lit:literal $(,$($arg:tt)+)?) => {
-        crate::print(format_args!(concat!($lit,'\n') $(,$($arg)+)?))
+        crate::print(format_args!(concat!($lit,'\n') $(,$($arg)+)?),false)
     };
 }

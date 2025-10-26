@@ -1,6 +1,6 @@
 use core::panic::PanicInfo;
 
-use crate::print;
+use crate::{print, sys_exit};
 
 
 
@@ -14,7 +14,6 @@ pub fn panic(info:&PanicInfo)->!{
     }else{
         print!("USER APPLICATION panic Message:{}",info.message().unwrap())
     }
-    loop {
-        
-    }
+    sys_exit(1);
+
 }

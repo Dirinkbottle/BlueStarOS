@@ -20,12 +20,13 @@ mod syscall;
 mod trap;
 mod time;
 mod task;
+mod driver;
 use log::{debug, trace, warn};
 use riscv::asm;
 use crate::config::{ebss, sbss};
 use crate::task::run_first_task;
 use crate::time::{ set_next_timeInterupt};
-use crate::trap::{enable_timer_interupt, set_kernel_trap_handler};
+use crate::trap::{enable_timer_interupt, rather_global_interrupt, set_kernel_trap_handler};
 extern crate alloc;
 use crate::{config::*, logger::kernel_info_debug, memory::allocator_init};
 use crate::memory::init_frame_allocator;
@@ -53,6 +54,7 @@ pub fn blue_main() -> ! {//永远不会返回
     kernel_init(); //bss，日志，分配器初始化
     set_kernel_trap_handler();//初始化陷阱入口，应该在地址空间激活前开启
     KERNEL_SPACE.lock().activate();//激活地址空间
+    rather_global_interrupt();//愿意处理全局中断使能 qemubug？？？？不设置也能正常中断.....
     enable_timer_interupt();//开启全局时间中断使能
     set_next_timeInterupt();//第一次开启时钟中断
     // kernel_space.translate_test();

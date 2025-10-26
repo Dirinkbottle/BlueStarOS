@@ -49,7 +49,7 @@ impl FrameAllocatorTrait for FrameAlloctor{
         }else if self.start<self.end{
             let ppn=self.start;
             self.start+=1;
-            trace!("new frame:ppn:{}",ppn);
+            //trace!("new frame:ppn:{}",ppn);
             Some(FramTracker::new(PhysiNumber(ppn)))
         }else{
             panic!("no more frame!");
@@ -60,9 +60,9 @@ impl FrameAllocatorTrait for FrameAlloctor{
     fn dealloc(&mut self,ppn:usize) {
         //页号合法性检查
         if ppn<self.origin || ppn>= self.start || ppn>self.end || self.recycle.contains(&ppn){
-            panic!("frame ppn:{} is not valid!",ppn);
+            panic!("frame ppn:{} is not valid! orign:{} start:{} end:{} ",ppn,self.origin,self.start,self.end);
         }
-        trace!("Frame ppn: {} was recycled!",ppn);
+        //trace!("Frame ppn: {} was recycled!",ppn);
         //回收物理页帧
         self.recycle.push(ppn);
     }
@@ -74,7 +74,7 @@ impl FrameAlloctor {
         self.start=PhysiAddr(start).floor_up().0;
         self.end=PhysiAddr(end).floor_down().0;
         self.recycle=Vec::new(); 
-        self.origin=start;
+        self.origin=PhysiAddr(start).floor_up().0;
         trace!("frame allocator init: start ppn:{} end ppn:{} size:{}MB",self.start,self.end,(end-start)/MB);
     }
 }
@@ -111,6 +111,6 @@ pub fn dealloc_frame(ppn:usize){
 impl Drop for FramTracker {
     fn drop(&mut self) {
         dealloc_frame(self.ppn.0);
-        trace!("free frame:ppn:{}",self.ppn.0);
+        //trace!("free frame:ppn:{}",self.ppn.0);
     }
 }

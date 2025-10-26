@@ -2,13 +2,11 @@
 use core::mem::size_of;
 use alloc::vec::Vec;
 use log::{debug, error};
-
+use crate::sbi::shutdown;
 use crate::{config::PAGE_SIZE, memory::{PageTable, VirAddr, VirNumber}, task::TASK_MANAER, time::{TimeVal, get_time_ms}};
-
+use crate::driver::STDIN;
 const FD_TYPE_STDIN:usize=1;
 const FD_TYPE_STDOUT:usize=2;
-
-
 
 ///addr:用户传入的时间结构体地址 目前映射处理错误，因为还没有任务这个概念
 fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面  
@@ -42,8 +40,6 @@ fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面
 
 
 }
-
-
 ///这个指针是用户空间的指针，应该解地址
 pub fn sys_write(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{//用户空间缓冲数组，应该以\0结束
   match fd_target {
@@ -62,27 +58,60 @@ pub fn sys_write(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{//
          return -1;
       }
       _=>{
-         panic!("Unsupport fd_type");
+         panic!("Unsupport Write to fd_type");
       }
   }
   
 }
-
-
-///exit系统调用，一般main程序return后在这里处理退出码，目前为简便panic实现
+///sysread调用 traphandler栈顶
+pub fn sys_read(source_buffer:usize,fd_target:usize,buffer_len:usize)->isize{
+   match fd_target{
+      FD_TYPE_STDIN=>{
+         if buffer_len==1{
+            //getchar标志，同时写入缓冲，返回读取了多少字符，getchar就返回字符ascill即可
+            STDIN::get_char() as isize
+         }else {
+            
+             //写入用户标准缓冲返回读取了多少字符
+             STDIN::readline(source_buffer, buffer_len) as isize
+         }
+      }
+      _=>{
+         panic!("UnSupport Read from FD_type")
+      }
+      
+   }
+}
+///exit系统调用，一般main程序return后在这里处理退出码 任务调度型返回-1
+///注意：这个函数永不返回！要么切换到其他任务，要么关机
 pub fn sys_exit(exit_code:usize)->isize{
-//程序return的返回码在这里进行判断和处理,目前全部都认为panic
-
-
    match exit_code{
       0=>{
+         error!("Program Exit Normaly With Code:{}",exit_code);
+         TASK_MANAER.remove_current_task();//移除当前任务块,当前任务块就不存在了
+         // 检查是否还有任务
+         if TASK_MANAER.task_queen_is_empty() {
+            error!("All tasks completed! Shutting down...");
+            shutdown();
+         }
+         // 切换到其他任务，这个函数应该永不返回
+         // 如果返回了，说明出现严重错误（比如只剩一个任务但没被删除）
          TASK_MANAER.suspend_and_run_task();
-         panic!("Program Exit Normaly With Code:{}",exit_code)
+         // 如果执行到这里，说明suspend_and_run_task异常返回了
+         // 这不应该发生，因为我们已经删除了当前任务
+        // panic!("sys_exit: suspend_and_run_task should never return!");
+        -1
       }
       _=>{
          panic!("Program Exit with code:{}",exit_code);
       }
    }
+}
+
+///主动放弃cpu 任务调度型返回-1 
+pub fn sys_yield()->isize{
+   TASK_MANAER.suspend_and_run_task();
+   -1
 }
 
 

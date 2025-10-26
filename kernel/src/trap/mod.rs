@@ -46,6 +46,7 @@ impl TrapContext {
         sstatus.set_spp(SPP::User);  // 设置返回用户态
         let mut register = [0; 32];
         //x2
+        debug!("SSTATUS:{:#X}",sstatus.bits());
         register[2]=user_sp;
         register[1]=no_return_start as usize;
         TrapContext {
@@ -59,13 +60,35 @@ impl TrapContext {
     }
 }
 
+///愿意处理全局中断。   这个状态会被trapcontext读取
+pub fn rather_global_interrupt(){
+        let sstatus_raw = sstatus::read();
+    
+    // 打印调试信息
+    debug!("Initial sstatus value:");
+    debug!("  SIE  (bit 1): {}", (sstatus_raw.bits() >> 1) & 1);
+    debug!("  SPIE (bit 5): {}", (sstatus_raw.bits() >> 5) & 1);
+    debug!("  SPP  (bit 8): {}", (sstatus_raw.bits() >> 8) & 1);
+    unsafe {
+        sstatus::set_spie();
+    }
+}
+
+
 ///设置sstatus的sie开启全局中断使能，设置sie寄存器的第五位（从0开始）开启具体时钟中断 关键雷区，在内核不开sie，仅仅设置stie，在第一个任务sret会恢复到sie上，从而开启中断
 pub fn enable_timer_interupt(){
     unsafe {
-   //  sstatus::set_sie(); 先暂时不开内核全局中断使能  
+     //sstatus::set_sie(); //先暂时不开内核全局中断使能   内核中断会错误
      sie::set_stimer(); 
     }
     debug!("TIMER INTERUPT ENABLE!");
+}
+
+///设置sstatus的外部中断使能
+pub fn enable_external_interrupt(){
+    unsafe {
+        sie::set_sext();//全局中断使能未开启
+    }
 }
 
 
@@ -143,7 +166,15 @@ pub extern "C" fn kernel_trap_handler(){//内核专属trap（目前不应该被�
             panic!("User StorePageFault at {:#x}, accessing {:#x}", sepc_val, stval_val)
         }
         Trap::Interrupt(Interrupt::SupervisorTimer)=>{
+           // print!("time");
             set_next_timeInterupt();
+            //error!("timer interrupt");
+             //print!("time");
+            TASK_MANAER.suspend_and_run_task();
+        }
+        Trap::Interrupt(Interrupt::SupervisorExternal)=>{
+            //外部中断，键盘等
+            panic!("externnal interrupt,but rust sbi make complete abtract!");
         }
         _=>{
             panic!("Unknown trap from user: {:?}", scauses.cause())

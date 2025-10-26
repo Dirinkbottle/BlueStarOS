@@ -3,11 +3,13 @@ use core::panicking::panic;
 
 use alloc::collections::vec_deque::VecDeque;
 use lazy_static::lazy_static;
+use log::error;
 use riscv::register::sstatus;
 use riscv::register::sstatus::SPP;
 use crate::__kernel_refume;
 use crate::config::*;
 use crate::memory::*;
+use crate::sbi::shutdown;
 use crate::task::file_loader;
 use log::debug;
 use crate::trap::{app_entry_point, kernel_trap_handler};
@@ -116,16 +118,51 @@ impl TaskManager {//全局唯一
     pub fn add_task(&mut self,task:TaskControlBlock){
         self.task_que_inner.lock().task_queen.push_back(task);
     }
-    ///从队列移除任务,应该由aplication的exit系统调用来执行
-    pub fn remove_task(&mut self,app_index:usize){
-
+    ///从队列移除当前任务,应该由aplication的exit系统调用来执行 之后必须执行下一个任务 bug修复：应该同时移动指针到任意一个ready的任务
+    pub fn remove_current_task(&self){
+        let mut inner=self.task_que_inner.lock();
+        
+        // 先保存要删除的任务索引
+        let task_to_remove = inner.current;
+        debug!("Removing task at index: {}, queue length before removal: {}", task_to_remove, inner.task_queen.len());
+        
+        // 删除任务
+        inner.task_queen.remove(task_to_remove).expect("Remove Task Control Block Failed!");
+        
+        // 删除后更新current指针
+        // VecDeque.remove(i) 会删除索引i的元素，后面的元素索引都会减1
+        // 删除后，如果还有任务，我们需要将current设置为一个有效的任务索引
+        if !inner.task_queen.is_empty() {
+            // 如果删除的是最后一个任务（task_to_remove == 原队列长度-1）
+            // 则删除后 task_to_remove >= 新队列长度，需要回绕到开头
+            if task_to_remove >= inner.task_queen.len() {
+                inner.current = 0;
+            } else {
+                // 否则，保持current在原位置
+                // 此时current指向的是原来task_to_remove+1位置的任务
+                inner.current = task_to_remove;
+            }
+            debug!("After removal: current set to {}, queue length: {}", inner.current, inner.task_queen.len());
+        }
+        
+        drop(inner);
+        if self.task_queen_is_empty() {
+            panic!("Remove Last Task");
+        }
     }
-    ///根据Stride挑选下个要运行的READY任务,挂起当前任务,把current设置为下个任务的index,然后运行下一个任务
-    pub fn suspend_and_run_task(&self){
+    ///根据Stride挑选下个要运行的READY任务,挂起当前任务,把current设置为下个任务的index,然后运行下一个任务 Stride算法：增加运行任务的步长
+    pub fn suspend_and_run_task(&self){ //首先应该检查任务是否为空
+
+        //任务列表是否为空?
+        if self.task_queen_is_empty(){
+                panic!("Task Queen is empty!");
+        }
+
+
         let mut inner  =self.task_que_inner.lock();
         let current=inner.current;
         //标记当前任务为BLOCK
-        inner.task_queen[current].task_statut=TaskStatus::Blocking;
+        inner.task_queen[current].task_statut=TaskStatus::Ready;
 
         let task_index=match inner.task_queen.
         iter().
@@ -140,23 +177,47 @@ impl TaskManager {//全局唯一
                 index//返回任务的下标索引
             }
             None=>{
-                panic!("No task can run!");
+                error!("No task can select");
+                shutdown();
+                
             }
         };
+        
+        debug!("current:{} Next task:{}",inner.current,task_index);
+        
+        //如果切换到同一个任务，直接返回 _switch耗费上下文资源
+        //这可以防止在持有用户态锁时发生任务切换导致的死锁问题（全局锁）
+        if current == task_index {
+            // 重新标记为运行状态，增加步长
+            inner.task_queen[task_index].task_statut = TaskStatus::Runing;
+            inner.task_queen[task_index].pass += inner.task_queen[task_index].stride;
+            drop(inner);
+            debug!("Same task, skip __switch");
+            return; // 直接返回，不需要切换
+        }
+        
         //标记这个任务为run
         let swaped_task_cx=&inner.task_queen[current].task_context as *const TaskContext;
         let task=&mut inner.task_queen[task_index];
         task.task_statut=TaskStatus::Runing;
+        //增加步长
+        task.pass+=task.stride;
         let need_swap_in = &mut task.task_context as *mut TaskContext;
-        debug!("current:{} Next task:{}",inner.current,task_index);
         inner.current=task_index;//更新任务指针
         drop(inner);//drop inner
         unsafe {
          __switch(swaped_task_cx , need_swap_in);
         }
-        panic!("unreachable!!");
 
-        //设置下一个任务的运行状态
+        //任务从这里返回
+    }
+
+    pub fn task_queen_is_empty(&self)->bool{
+        let inner=self.task_que_inner.lock();
+        let result= inner.task_queen.is_empty();
+        drop(inner);
+        debug!("task queen empty?:{}",result);
+        result
     }
 
 
@@ -169,6 +230,8 @@ impl TaskManager {//全局唯一
       let kernel_task_cx=TaskContext::zero_init();
       //标记为running
       task.task_statut=TaskStatus::Runing;
+      //增加步长
+      task.pass+=task.stride;
       drop(inner);//越早越好
       // 调用 __switch 切换到第一个任务
       // __switch 会：

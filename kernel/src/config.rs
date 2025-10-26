@@ -51,7 +51,7 @@ pub const TRAP_CONTEXT_ADDR:usize=TRAP_BOTTOM_ADDR-PAGE_SIZE;
 pub const USERLIB_START_RETURN_HIGNADDR:usize=TRAP_CONTEXT_ADDR-PAGE_SIZE;
 pub const HIGNADDRESS_MASK:usize=0xFFFFFFE000000000;//0xFFFFFFFFFFFFF000 hb *0xfffffffffffff070
 ///每秒多少次时钟中断
-pub const TIME_FREQUENT:usize=100;
+pub const TIME_FREQUENT:usize=1000;
 
 
 ///任务初始ticket(优先级)

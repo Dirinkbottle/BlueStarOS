@@ -141,6 +141,7 @@ impl PageTableEntry {
     pub fn is_valid(&self)->bool{
         self.flags().contains(PTEFlags::V)
     }
+    ///设置页表项不合法
     pub fn set_inValid(&mut self){
         self.0=0 //全部置零 
     }
@@ -153,6 +154,18 @@ impl PageTable {
             root_ppn:PhysiNumber(root_frame.ppn.0),
             entries:vec![root_frame], //把根页面挂下面 正确，获取所有权
         }
+    }
+
+    ///获取内核地址空间的页表视图 只能由内核调用
+    pub fn get_kernel_table_layer()->PageTable{
+        let inner=KERNEL_SPACE.lock();
+        let satp =inner.table.satp_token();
+        drop(inner);//drop inner 好习惯
+        let table=PageTable{
+            root_ppn:PhysiNumber(satp & ((1usize << 44) -1)),
+            entries:Vec::new()
+        };
+        table
     }
 
     ///根据起始虚拟地址，从satp和vpn和len获取可变的u8数组
@@ -200,12 +213,7 @@ impl PageTable {
         table
     }
 
-    /// 获取当前页表的临时视图（仅用于地址转换，不管理生命周期）
-    /// ⚠️ 返回的是临时创建的 PageTable 结构，entries 为空
-    pub fn get_current_pagetable_view()->Self{
-        let satp = satp::read().bits();
-        PageTable::crate_table_from_satp(satp)
-    }
+ 
 
     ///根据vpn获取该页的可变数组切片,获取从物理页开头的地址切片
     pub fn get_mut_byte(&mut self,vpn:VirNumber)->Option<&'static mut [u8;PAGE_SIZE]>{//防止跨页
@@ -258,7 +266,7 @@ impl PageTable {
     }
     
     ///查找但是不创建新页表项
-   fn find_pte_vpn(&mut self,VirNum:VirNumber)->Option<&mut PageTableEntry>{
+    pub fn find_pte_vpn(&mut self,VirNum:VirNumber)->Option<&mut PageTableEntry>{
         let mut current_ppn=self.root_ppn.0;
         let mut idx=VirNum.index();
         let mut pte_array=self.get_pte_array(current_ppn);

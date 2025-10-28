@@ -1,13 +1,15 @@
 
 use core::{arch::global_asm, panic, panicking::panic};
-use crate::{config::*, task::TASK_MANAER, time::set_next_timeInterupt};
+use crate::{config::*, task::TASK_MANAER, time::set_next_timeInterupt, trap::pagefaultHandler::PageFaultHandler};
 use log::{debug, error, };
 use riscv::register::{scause::{self, Exception, Trap}, sie::Sie, sscratch, sstatus::{self, SPP, Sstatus}, stval, stvec, utvec::TrapMode};
 use crate::syscall::*;//系统调用
 use riscv::register::sie;
 use riscv::register::scause::Interrupt;
 use core::arch::asm;
+use crate::memory::VirAddr;
 
+mod pagefaultHandler;
 
 pub enum TrapFunction{
     USERHANDLER,
@@ -157,13 +159,16 @@ pub extern "C" fn kernel_trap_handler(){//内核专属trap（目前不应该被�
             panic!("User IllegalInstruction at {:#x}", sepc_val)
         }
         Trap::Exception(Exception::InstructionPageFault)=>{
-            panic!("User InstructionPageFault at {:#x}, accessing {:#x}", sepc_val, stval_val)
+            error!("User InstructionPageFault at {:#x}, accessing {:#x}", sepc_val, stval_val);
+            PageFaultHandler(VirAddr(stval_val));
         }
         Trap::Exception(Exception::LoadPageFault)=>{
-            panic!("User LoadPageFault at {:#x}, accessing {:#x}", sepc_val, stval_val)
+            error!("User LoadPageFault at {:#x}, accessing {:#x}", sepc_val, stval_val);
+            PageFaultHandler(VirAddr(stval_val));
         }
         Trap::Exception(Exception::StorePageFault)=>{
-            panic!("User StorePageFault at {:#x}, accessing {:#x}", sepc_val, stval_val)
+            error!("User StorePageFault at {:#x}, accessing {:#x}", sepc_val, stval_val);
+            PageFaultHandler(VirAddr(stval_val));
         }
         Trap::Interrupt(Interrupt::SupervisorTimer)=>{
            // print!("time");

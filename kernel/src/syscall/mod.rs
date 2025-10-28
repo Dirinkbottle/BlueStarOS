@@ -7,6 +7,8 @@ pub const SYS_WRITE:usize=1;//stdin write系统调用
 pub const SYS_READ:usize=2;//stdin read系统调用
 pub const SYS_EXIT:usize=3;//exit程序结束，运行下一个程序
 pub const SYS_YIELD:usize=4;//主动放弃cpu
+pub const SYS_MAP:usize=5;//mmap映射系统调用
+pub const SYS_UNMAP:usize=6;//unmap映射系统调用
 
 ///id: 系统调用号
 ///args:接受1个usize参数
@@ -31,6 +33,12 @@ pub fn syscall_handler(id:usize,arg:[usize;3]) -> isize {
         }
         SYS_YIELD=>{
             sys_yield()
+        }
+        SYS_MAP=>{
+            sys_map(arg[0], arg[1])
+        }
+        SYS_UNMAP=>{
+            sys_unmap(arg[0], arg[1])
         }
         _ => {
             panic!("Unknown Syscall type: {}", id);

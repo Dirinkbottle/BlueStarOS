@@ -8,12 +8,47 @@ use crate::driver::STDIN;
 const FD_TYPE_STDIN:usize=1;
 const FD_TYPE_STDOUT:usize=2;
 
+
+
+
+
+
+
+///mmap系统调用
+/// startaddr:usize size:长度
+pub fn sys_map(start:usize,size:usize)->isize{
+    let inner=TASK_MANAER.task_que_inner.lock();
+    let current=inner.current;
+    drop(inner);
+    let mut inner=TASK_MANAER.task_que_inner.lock();
+    let mut memset=&mut inner.task_queen[current].memory_set;
+    memset.mmap(VirAddr(start), size)
+    //inner自动销毁
+}
+
+///unmap系统调用
+/// startaddr:usize size:长度
+pub fn sys_unmap(start:usize,size:usize)->isize{
+    let inner=TASK_MANAER.task_que_inner.lock();
+    let current=inner.current;
+    drop(inner);
+    let mut inner=TASK_MANAER.task_que_inner.lock();
+    let memset=&mut inner.task_queen[current].memory_set;
+    debug!("SYSCALL_UNMAP:ADDR{:#x} LEN:{}",start,size);
+    let resu=memset.unmap_range(VirAddr(start), size);
+    //销毁inner,也可以自动销毁
+    drop(inner);
+    resu
+}
+
+
+
 ///addr:用户传入的时间结构体地址 目前映射处理错误，因为还没有任务这个概念
 fn syscall_get_time(addr:*mut TimeVal){  //考虑是否跨页面  
       let vpn=(addr as usize)/PAGE_SIZE;
       let offset=VirAddr(addr as usize).offset();
       // 获取当前页表的临时视图
-      let mut table = PageTable::get_current_pagetable_view();
+      let mut table = PageTable::get_kernel_table_layer();
       let mut frame_pointer=table.get_mut_byte(VirNumber(vpn)).expect("Big Error!");
 
    //判断是否跨页 跨页需要特殊处理

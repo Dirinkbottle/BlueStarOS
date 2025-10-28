@@ -53,7 +53,7 @@ __kernel_refume: #a0 trap_context_addr a1:user satp
 
 #切换为用户地址空间
 csrw satp ,a1
-sfence.vma
+sfence.vma #刷新页表
 
 #让sscratch指向所有任务通用的trapcontext
 csrw sscratch,a0 

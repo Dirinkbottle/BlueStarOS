@@ -35,7 +35,7 @@ enum TaskStatus {
 }
 
 pub struct TaskControlBlock{
-    memory_set:MapSet,//程序地址空间
+    pub memory_set:MapSet,//程序地址空间
     task_statut:TaskStatus,//程序运行状态
     task_context:TaskContext,//任务上下文
     trap_context_ppn:usize,//陷阱上下文物理帧
@@ -46,14 +46,15 @@ pub struct TaskControlBlock{
 
 
 
-struct TaskManagerInner{
-    task_queen:VecDeque<TaskControlBlock>,//任务队列
-    current:usize//当前任务
+pub struct TaskManagerInner{
+    pub task_queen:VecDeque<TaskControlBlock>,//任务队列
+    pub current:usize//当前任务
 }
 
 ///任务管理器
 pub struct TaskManager{//单核环境目前无竞争
-    task_que_inner:UPSafeCell<TaskManagerInner>,//内部可变性
+    ///注意释放时机
+   pub task_que_inner:UPSafeCell<TaskManagerInner>,//内部可变性 
 }
 
 
@@ -267,6 +268,16 @@ impl TaskManager {//全局唯一
         drop(inner);
         trap_context
     }
+
+
+    ///kail当前任务，内核有权调用 调用栈顶必须为TrapHandler! 调用它的地方考虑是否直接return
+    pub fn kail_current_task_and_run_next(&self){
+        self.remove_current_task();//删除对应任务块
+        self.suspend_and_run_task();//调度下一个stride最小的任务
+        error!("Task Kailed!");
+    }
+
+
 
 }
 

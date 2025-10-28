@@ -17,6 +17,10 @@ app_list_start:
     .quad app_5_end
     .quad app_6_start
     .quad app_6_end
+    .quad app_7_start
+    .quad app_7_end
+    .quad app_8_start
+    .quad app_8_end
 app_list_end:
 
 app_1_start:
@@ -37,3 +41,9 @@ app_5_end:
 app_6_start:
 .incbin "../user/target/riscv64gc-unknown-none-elf/release/switch"
 app_6_end:
+app_7_start:
+.incbin "../user/target/riscv64gc-unknown-none-elf/release/sys_map"
+app_7_end:
+app_8_start:
+.incbin "../user/target/riscv64gc-unknown-none-elf/release/unmap"
+app_8_end:

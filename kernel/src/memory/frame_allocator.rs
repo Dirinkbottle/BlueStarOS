@@ -44,12 +44,12 @@ impl FrameAllocatorTrait for FrameAlloctor{
     ///分配物理页帧
     fn alloc(&mut self)->Option<FramTracker>{
         if let Some(ppn)=self.recycle.pop(){
-            trace!("recycle frame:ppn:{}",ppn);
+            trace!("realloc frame:ppn:{}",ppn);
             Some(FramTracker::new(PhysiNumber(ppn)))
         }else if self.start<self.end{
             let ppn=self.start;
             self.start+=1;
-            //trace!("new frame:ppn:{}",ppn);
+            trace!("alloc frame:ppn:{}",ppn);
             Some(FramTracker::new(PhysiNumber(ppn)))
         }else{
             panic!("no more frame!");

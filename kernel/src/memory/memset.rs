@@ -11,6 +11,7 @@ use crate::{config::*, memory::{address::*, alloc_frame, frame_allocator::FramTr
 use crate::trap::no_return_start;
 use crate::trap::TrapFunction;
 ///开始和结束，一个范围,自动[start,end] start地址自动向下取整，end也向下取整，因为virnumrange用于代码映射，防止代码缺失, startva/PAGE =num+offset ,从num开始，endva/pagesize=endva+offset由于闭区间所以向下取整,防止多映射
+#[derive(Debug,Clone, Copy)]
 pub struct VirNumRange(pub VirNumber,pub VirNumber);
 bitflags! {//MapAreaFlags 和 PTEFlags 起始全为0
     pub struct MapAreaFlags: usize {
@@ -25,12 +26,69 @@ bitflags! {//MapAreaFlags 和 PTEFlags 起始全为0
     }
 }
 
+///VirNumRange迭代器类型
+pub struct VirNumRangeIter{
+    current:VirNumber,
+    end:VirNumber
+}
+impl Iterator for VirNumRangeIter {
+    type Item = VirNumber;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut current=self.current;
+        let end =self.end;
+        if current.0<=end.0{
+            let cur=current.0;
+            debug!("cur:{}",cur);
+            self.current.step();
+            return Some(VirNumber(cur));
+        }else {
+            return None;
+        }
+    }
+}
+
+impl IntoIterator for VirNumRange {
+    type IntoIter = VirNumRangeIter;
+    type Item = VirNumber;
+    fn into_iter(self) -> Self::IntoIter {
+        VirNumRangeIter{
+            current:self.0,
+            end:self.1
+        }
+    }
+}
+
 impl VirNumRange {
     ///VirNumRange初始化 传入起始地址和结束地址,闭区间都需要映射 [start,end] start地址自动向下取整，end也向下取整
     pub fn new(start:VirAddr,end:VirAddr)->Self{
         let start_vpn=start.floor_down();
         let end_vpn=end.floor_down();
         VirNumRange(start_vpn, end_vpn)//闭区间，都需要映射
+    }
+    ///查找区间是否包含某个vpn号 自身是闭区间
+    pub fn is_contain_thisvpn(&self,vpn:VirNumber)->bool{
+        let start=self.0;
+        let end =self.1;
+        //闭区间
+        if vpn>=start && vpn<=end{
+            return true;
+        }else {
+            return false;
+        }
+    }
+
+    ///查找区间是和这个区间有交集 自身是闭区间
+    pub fn is_contain_thisvpnRange(&self,vpnRange:VirNumRange)->bool{
+        let start=self.0;
+        let end =self.1;
+        let target_start=vpnRange.0;
+        let target_end = vpnRange.1;
+        //闭区间
+        if (target_start>=start && target_start<=end )| (target_end>=start && target_end<=end){
+            return true;
+        }else {
+            return false;
+        }
     }
 }
 
@@ -42,17 +100,27 @@ impl From<MapAreaFlags> for PTEFlags {
         }
     }
 }
-#[derive(PartialEq,Clone, Copy)]
+#[derive(PartialEq,Clone, Copy,Debug)]
 pub enum MapType {
     Indentical,
     Maped
 }
+#[derive(Debug)]
 pub struct MapArea{
     ///虚拟页号范围,闭区间
     range:VirNumRange,
     flags:MapAreaFlags,//访问标志   
     pub frames:BTreeMap<VirNumber,FramTracker>,//Maparea 持有的物理页
     map_type:MapType,
+    area_type:MapAreaType
+}
+#[derive(Debug,Clone, Copy,PartialEq, Eq)]
+///用户程序如果MMAP 只能 maped映射
+pub enum MapAreaType {
+    ///有实际挂载的物理页帧和对应页表项，或者恒等映射有明确的物理页帧映射对象的
+    DEFAULT,
+    ///只是预留虚拟地址空间，没有合法页表项，目前没有对应物理页帧，后期pagefault处理，目的只是检测访问pagefault的地址是否为先前映射的
+    MMAP,
 }
 pub struct MapSet{
     ///页表
@@ -61,15 +129,24 @@ pub struct MapSet{
 }
 impl MapArea {
     ///range,闭区间
-    pub fn new(range:VirNumRange,flags:MapAreaFlags,map_type:MapType)->Self{
+    pub fn new(range:VirNumRange,flags:MapAreaFlags,map_type:MapType,area_type:MapAreaType)->Self{
         MapArea{
             range,
             flags,
             frames:BTreeMap::new(),
             map_type,
+            area_type,
         }
     }
 
+    ///自身mapareatype 是不是这个
+    pub fn areatype_is_this(&self,this:MapAreaType)->bool{
+        if this == self.area_type{
+            return true;
+        }else {
+            return false;
+        }
+    }
     
 
     pub fn map_one(&mut self,vpn:VirNumber,page_table:&mut PageTable){//带自动分配物理页帧的
@@ -78,12 +155,14 @@ impl MapArea {
         if page_table.is_maped(vpn){return;}//如果映射过了就跳过,防止多个一个vpn对应多个ppn，但是只有最后的ppn有效
         match self.map_type{
             MapType::Indentical=>{
+               // trace!("Identical map");
                 ppn =PhysiNumber(vpn.0) //内核特权高大上，恒等映射 内核映射所有物理帧，但是不能占用和分配对应Framtracer，需要构建一个特殊页表
             }
             MapType::Maped=>{
                let frame= alloc_frame().expect("Memory Alloc Failed By map_one");
                 ppn=frame.ppn;
                 self.frames.insert(vpn,frame ); //管理最终pte对应的frametracer，分工明确 巧妙！！！！
+                trace!("map vpn:{}->ppn:{}",vpn.0,ppn.0)
             }
         };
         page_table.map(vpn, ppn, self.flags.into());
@@ -145,6 +224,82 @@ impl MapSet {
         &mut self.table    
     }
 
+
+    ///查找这个vpn对应的area 给这个vpn的maparea分配物理帧，添加合法页表映射 前提是检查过确实有area包含vpn
+    pub fn findarea_allocFrame_and_setPte(&mut self,vpn:VirNumber){
+        let index = self.areas.iter().position(|area|{
+            area.range.is_contain_thisvpn(vpn)
+        }).expect("Logim ");
+        let area=&mut self.areas[index];
+        debug!("Find Map Area! vpn:{} ",vpn.0);
+        area.map_one(vpn, &mut self.table);//mmap类型的area也是maped不可能存在恒等映射的用户程序
+    }
+
+
+    ///mmap系统调用，创建一个有vpnrange的maparea，没有实际映射条目和物理页帧的maparea 
+    ///startVAR mmap起始地址 size:映射长度(会被裁剪，小于一个页映射一个页,不满一个页补全一个页) 返回-1代表失败 0代表成功 
+    pub fn mmap(&mut self,startVAR:VirAddr,size:usize)->isize{
+        let start_vpn:VirNumber=startVAR.floor_down();
+        let end_vpn:VirNumber=VirAddr(startVAR.0+size-1).floor_down();//就是flourdown
+        let range:VirNumRange=VirNumRange(start_vpn, end_vpn);
+        //映射地址合法性检查（从开始到结束的区间是否和当前有交集）
+        //1.受否已经存在对应vpn项
+        if self.AallArea_Iscontain_thisVpn_plus(range){
+            return -1;
+        }
+        //记得加用户U权限
+        let mapflags=MapAreaFlags::R | MapAreaFlags::W | MapAreaFlags::X | MapAreaFlags::U;//默认可读写可执行（兼容后面的换入换出）
+        //没有对应vpn，在该个mapset就没有对应的映射。之前存在并且unmap时应该处理或销毁其对应页表项，所有这里合法，支持!
+        self.add_area(range, MapType::Maped, mapflags, None, MapAreaType::MMAP);
+        0
+    }
+
+    ///unmap系统调用,取消映射一个[start,end]范围的虚拟页面，并且设置对应页表项不合法
+    /// startVAR mmap起始地址 size:映射长度(会被裁剪，小于一个页取消映射一个页,不满一个页补全一个页) 返回-1代表失败 0代表成功 
+    pub fn unmap_range(&mut self,startVAR:VirAddr,size:usize,)->isize{
+        //合法性检查，是否之前有过映射
+        let start_vpn:VirNumber=startVAR.floor_down();
+        let end_vpn:VirNumber=VirAddr(startVAR.0+size-1).floor_down();//就是flourdown
+        let range:VirNumRange=VirNumRange(start_vpn, end_vpn);
+        if !self.AallArea_Iscontain_thisVpn_plus(range){//没有映射不能取消映射
+            return -1;
+        }
+        //剩下是有映射的了，但是得判断是不是MMAP类型的area，不能取消映射DEFAULTD段
+        //找存在映射的area判断所有是否是default
+        if !self.AllArea_NoDefaultType(range){
+            return -1;
+        }
+        debug!("nocontain default type area,and  exits:{:#x} flect previous",startVAR.0);
+        //也没有defalut的area，可以取消映射
+        //1.非法对应页表项 MMAP area有可能没有触发过缺页，就没有对应pte
+        for num in range{
+            match self.table.find_pte_vpn(num){
+                Some(mut pte)=>{
+                debug!("find mmaped pte will set it illegal! vpnnum:{}",num.0);
+                  pte.set_inValid();  
+                }
+                None=>{
+
+                }
+            }
+        }
+
+        //2.移除对应area 需要查找所有关联的maparea，因为可能是多次
+        let match_vec= self.pop_contain_range_area(range);
+        debug!("Find {} maparea connect",match_vec.len());
+        //3.判断结果是否为空
+        if match_vec.is_empty(){
+            panic!("Unmap logim error");//是有还是没有，逻辑严重不符
+            return -1;
+        }
+        trace!("Unmap Area:{:?}",match_vec);
+
+        //成功 maparea之后会free~~~~，页帧会自动释放
+        0
+    }
+
+
+
     ///TODO:
     ///从elf解析数据创建应用地址空间 Mapset entry user_stack,kernel_sp心智空间有限，姑且这样吧,外部库不值得研究，内核全部完成后自己实现xmas.映射trap，trapcontext，userstack，kernelstack，userheap。
     /// appid从0开始，必须手动+1
@@ -181,7 +336,11 @@ impl MapSet {
                        i, start_va.0, end_va.0, map_perm);
                 
                 max_end_vpn=end_va.floor_up();
-                memory_set.add_area(VirNumRange::new(start_va, end_va), MapType::Maped, map_perm,Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]) );
+                memory_set.add_area(VirNumRange::new(start_va, end_va),
+                 MapType::Maped,
+                  map_perm,
+                  Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
+                  MapAreaType::DEFAULT );//应用area默认default
             }
         }
         
@@ -195,11 +354,19 @@ impl MapSet {
         let userstack_end_vpn=VirNumber(userstack_start_vpn.0+1);
         let user_sp:VirAddr=VirAddr(userstack_end_vpn.0*PAGE_SIZE + PAGE_SIZE);//因为结尾不包含，属于下一个页面
         debug!("  Mapping user stack: vpn={:#x}, sp={:#x}", userstack_start_vpn.0, user_sp.0);
-        memory_set.add_area(VirNumRange(userstack_start_vpn,userstack_end_vpn), MapType::Maped, MapAreaFlags::W | MapAreaFlags::R | MapAreaFlags::U, None);
+        memory_set.add_area(VirNumRange(userstack_start_vpn,userstack_end_vpn), 
+        MapType::Maped,
+         MapAreaFlags::W | MapAreaFlags::R | MapAreaFlags::U,
+          None
+        ,MapAreaType::DEFAULT);
         //映射用户堆
         let userheap_start_end_vpn = VirNumber(userstack_start_vpn.0+1);//无需guardpage，堆不会向下溢出
         debug!("  Mapping user heap: vpn={:#x}", userheap_start_end_vpn.0);
-        memory_set.add_area(VirNumRange(userheap_start_end_vpn, userheap_start_end_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W | MapAreaFlags::U, None);
+        memory_set.add_area(VirNumRange(userheap_start_end_vpn, userheap_start_end_vpn),
+         MapType::Maped, 
+         MapAreaFlags::R | MapAreaFlags::W | MapAreaFlags::U, 
+         None,
+        MapAreaType::DEFAULT);
         //映射内核栈
         //debug!("Kernel stack start viadr:{:#x} appid:{}",TRAP_BOTTOM_ADDR-(PAGE_SIZE+PAGE_SIZE)*appid,appid);
         let strat_kernel_vpn =VirAddr(TRAP_BOTTOM_ADDR-(PAGE_SIZE+KERNEL_STACK_SIZE)*appid).strict_into_virnum();//隔了一个guardpage 
@@ -207,7 +374,11 @@ impl MapSet {
         let kernel_stack_top =TRAP_BOTTOM_ADDR-((PAGE_SIZE+KERNEL_STACK_SIZE)*appid)+KERNEL_STACK_SIZE;//保命
         //debug!("Kernel stack vpn:{}",strat_adn_end_vpn.0);
     
-        KERNEL_SPACE.lock().add_area(VirNumRange(strat_kernel_vpn, end_kernel_vpn), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
+        KERNEL_SPACE.lock().add_area(
+            VirNumRange(strat_kernel_vpn, end_kernel_vpn),
+             MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, 
+             None
+            ,MapAreaType::DEFAULT);
         (
             memory_set,
             entry_point as usize,
@@ -216,11 +387,6 @@ impl MapSet {
         )
     }
 
-
-    ///这个map_one函数会在第0个self.area里面随便分配一个帧然后映射
-    pub fn map_one(){
-
-    }
 
     fn new_bare()->Self{
         MapSet{
@@ -240,7 +406,12 @@ impl MapSet {
     ///映射陷阱上下文
     pub fn map_trapContext(&mut self){
         let trapcontext_addr:VirAddr = VirAddr(TRAP_CONTEXT_ADDR);
-        self.add_area(VirNumRange(trapcontext_addr.strict_into_virnum(), trapcontext_addr.strict_into_virnum()), MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, None);
+        self.add_area(
+            VirNumRange(trapcontext_addr.strict_into_virnum(), 
+            trapcontext_addr.strict_into_virnum()), 
+            MapType::Maped, MapAreaFlags::R | MapAreaFlags::W, 
+            None
+            ,MapAreaType::DEFAULT);
     }
 
     ///目前不可用
@@ -254,28 +425,58 @@ impl MapSet {
 
    // }
 
+    ///判断自身的所有maparea是否有过对应vpn的映射或者mmap,只能检查一个页面
+    /// vpn ：需要查找的vpn虚拟页号.
+    pub fn AallArea_Iscontain_thisVpn(&self,vpn:VirNumber)->bool{
+        self.areas.iter().any(|area|{
+            area.range.is_contain_thisvpn(vpn)
+        })
 
-    ///取消映射一个页面，通过该地址空间唯一的vpn查找
-    pub fn umap_one(&mut self,vpn:VirNumber){
-        self.areas.iter_mut().for_each(|area| {
-            if area.frames.contains_key(&vpn) {//找到那个area持有唯一的vpn
-                 //调用内部页表取消映射
-                area.unmap_one(&mut self.table, vpn);
-            }
-        });
     }
 
-    ///取消映射一个区间的vpn页面
-    pub fn unmap_range(){
-        //暂时用不到
+    ///判断自身的所有maparea是否有过对应vpn的映射或者mmap,求是否存在交集
+    /// VpnRange ：连续闭区间，需要查找的vpn虚拟页号范围.
+    pub fn AallArea_Iscontain_thisVpn_plus(&self,vpnrange:VirNumRange)->bool{
+        self.areas.iter().any(|area|{
+            area.range.is_contain_thisvpnRange(vpnrange)
+        })
+    }
+
+    ///判断这个范围内的area有DEFAULT的映射方式吗
+    pub fn AllArea_NoDefaultType(&self,range:VirNumRange)->bool{
+        //首先找到哪些area包含range里面的vpn
+        self.areas.iter().any(|area|{
+            area.areatype_is_this(MapAreaType::DEFAULT)
+        })
+    }
+
+    ///获取所有包含范围内vpn的maparea的实体move所有权
+    pub fn pop_contain_range_area(&mut self,range:VirNumRange)->Vec<MapArea>{
+        let mut result:Vec<MapArea>=Vec::new();//存放结果 
+        let index:Vec<usize> = self.areas.iter().enumerate().filter(|(_,area)|{
+            area.range.is_contain_thisvpnRange(range)
+        }).map(|(index,_)|{index}).collect();
+        for inde in index{
+           result.push(self.areas.remove(inde));
+        }
+        result
+        
     }
 
     ///输入range，maptype和flags 自动处理maparea的映射和物理帧挂载以及对应memset的pagetable映射,处理数据的复制映射   但是映射用户栈不需要数据
-    pub fn add_area(&mut self,range:VirNumRange,map_type :MapType,flags:MapAreaFlags,data:Option<&[u8]>){
-        let mut area=MapArea::new(range, flags, map_type);
-        area.map_all(&mut self.table);//映射area
-        if let MapType::Maped = map_type{//maped方式要复制数据
-            area.copy_data(data, &mut self.table);
+    /// area_type优先级更高 其次map_type
+    pub fn add_area(&mut self,range:VirNumRange,map_type :MapType,flags:MapAreaFlags,data:Option<&[u8]>,area_type:MapAreaType){
+        let mut area=MapArea::new(range, flags, map_type,area_type);
+        match area_type{
+            MapAreaType::DEFAULT=>{
+                area.map_all(&mut self.table);//映射area,处理物理页帧分配逻辑
+                if let MapType::Maped = map_type{//maped方式要复制数据
+                    area.copy_data(data, &mut self.table);
+                }
+            }
+            MapAreaType::MMAP=>{
+                //啥都不做，mmap目前不用映射和分配物理页帧，留在pagefalut
+            }
         }
         self.areas.push(area);
     } 
@@ -288,30 +489,49 @@ impl MapSet {
 
         //映射代码段
         let text_range = VirNumRange::new(VirAddr(stext as usize), VirAddr(etext as usize));//range封装过
-        mem_set.add_area(text_range, MapType::Indentical,  MapAreaFlags::R | MapAreaFlags::X  ,None);
+        mem_set.add_area(text_range, 
+            MapType::Indentical, 
+             MapAreaFlags::R | MapAreaFlags::X  ,
+             None
+            ,MapAreaType::DEFAULT);
 
 
         //映射rodata段
         let rodata_range = VirNumRange::new(VirAddr(srodata as usize), VirAddr(erodata as usize));//range封装过
-        mem_set.add_area(rodata_range, MapType::Indentical, MapAreaFlags::R,None);
+        mem_set.add_area(rodata_range,
+             MapType::Indentical, 
+             MapAreaFlags::R,
+             None
+            ,MapAreaType::DEFAULT);
         //trace!("{} {}\n",rodata_start_vpn.0,rodata_end_vpn.0);
 
     
         // 映射内核数据段
         let data_range = VirNumRange::new(VirAddr(sdata as usize), VirAddr(edata as usize));//range封装过
-        mem_set.add_area(data_range, MapType::Indentical, MapAreaFlags::R | MapAreaFlags::W,None);
+        mem_set.add_area(data_range,
+             MapType::Indentical,
+              MapAreaFlags::R | MapAreaFlags::W,
+              None
+            ,MapAreaType::DEFAULT);
        // trace!("{} {}\n",data_start.0,data_end.0);
 
         //映射bss段
         let bss_range = VirNumRange::new(VirAddr(sbss as usize), VirAddr(ebss as usize));//range封装过
-        mem_set.add_area(bss_range, MapType::Indentical, MapAreaFlags::R | MapAreaFlags::W,None);
+        mem_set.add_area(bss_range,
+             MapType::Indentical,
+              MapAreaFlags::R | MapAreaFlags::W,
+              None,
+            MapAreaType::DEFAULT);
        // trace!("{} {}\n",bss_start.0,bss_end.0);
         
         // 映射物理内存(必须手动构造range区间)，phystart需要向上取整,end需要手动-1 range
         let phys_start =VirAddr(ekernel as usize).floor_up();
         let phys_end =VirAddr(ekernel as usize + MEMORY_SIZE-PAGE_SIZE).floor_down(); //ekernel 为结束地址 end需要手动-1 range
         let phys_range = VirNumRange(phys_start,phys_end);
-        mem_set.add_area(phys_range, MapType::Indentical, MapAreaFlags::W | MapAreaFlags::R, None);
+        mem_set.add_area(phys_range, MapType::Indentical,
+             MapAreaFlags::W | MapAreaFlags::R,
+              None,
+            MapAreaType::DEFAULT);
        // trace!("{} {}\n",phys_start.0,phys_end.0);
 
         //内核地址空间映射完成

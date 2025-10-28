@@ -2,6 +2,8 @@ const SYS_WRITE:usize = 1;//write系统调用
 const SYS_READ:usize = 2;//read系统调用
 const SYS_EXIT:usize=3;//exit程序结束，运行下一个程序
 const SYS_YIELD:usize=4;//主动放弃一次cpu
+const SYS_MAP:usize=5;//SYSMAP
+const SYS_UNMAP:usize=6;//SYSUNMAP
 ///syscall封装 3个参数版本
 pub fn sys_call(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -15,6 +17,14 @@ pub fn sys_call(id: usize, args: [usize; 3]) -> isize {
         );
     }
     ret
+}
+
+pub fn sys_map(startAddr:usize,len:usize)->isize{
+    sys_call(SYS_MAP,[startAddr,len,0])
+}
+
+pub fn sys_unmap(startAddr:usize,len:usize)->isize{
+    sys_call(SYS_UNMAP,[startAddr,len,0])
 }
 
 pub fn sys_read(fd_type:usize,buffer_ptr:usize,buffer_len:usize)->isize{

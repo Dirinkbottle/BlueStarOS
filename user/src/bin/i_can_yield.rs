@@ -8,7 +8,7 @@ extern crate user_lib;
 
 #[no_mangle]
 pub fn main()->usize{
-    for i in 0..1000{
+    for i in 0..1{
         sys_yield();
         println!("YIELD!");
     }

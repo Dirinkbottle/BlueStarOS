@@ -39,6 +39,13 @@ pub fn readline(ptr:usize,len:usize)->isize{//返回读取的字符数量 目前
   syscall::sys_read(FD_TYPE_STDIN, ptr, len)
 }
 
+pub fn map(start:usize,len:usize)->isize{
+  syscall::sys_map(start, len)
+}
+
+pub fn unmap(start:usize,len:usize)->isize{
+  syscall::sys_unmap(start, len)
+}
 
 
 use crate::panic::panic;

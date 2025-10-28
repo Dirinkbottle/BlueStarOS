@@ -10,12 +10,12 @@ extern crate user_lib;
 pub fn main()->usize{
    let mut i=0;
        println!("no:{}",i);
-    for i in 0..1000{
+    for i in 0..1{
         println!("no:{}",i);
     }
 
 
-for i in 0..1000{
+for i in 0..1{
         println!("no:{}",i);
     }
 

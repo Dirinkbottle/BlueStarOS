@@ -10,13 +10,13 @@ extern crate user_lib;
 pub fn main()->usize{
    let mut i=0;
        println!("Yes:{}",i);
-    for i in 0..1000{
+    for i in 0..1{
         println!("this:{}",i);
     }
 
 sys_yield();
 
-for i in 0..1000{
+for i in 0..1{
         println!("this3:{}",i);
 }
 

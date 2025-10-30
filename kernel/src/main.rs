@@ -21,6 +21,8 @@ mod trap;
 mod time;
 mod task;
 mod driver;
+mod fs;
+use alloc::string::String;
 use log::{debug, trace, warn};
 use riscv::asm;
 use crate::config::{ebss, sbss};
@@ -31,6 +33,7 @@ extern crate alloc;
 use crate::{config::*, logger::kernel_info_debug, memory::allocator_init};
 use crate::memory::init_frame_allocator;
 use crate::memory::MapSet;
+use crate::fs::{create_file, initial_root_filesystem, read_file, write_file};
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("app.asm"));
 /// clear BSS segment
@@ -62,6 +65,7 @@ pub fn blue_main() -> ! {//永远不会返回
     debug!("stext {:#x}",__kernel_trap as usize);
     debug!("traper {:#x}",straper as usize);
     debug!("trap refume virtualaddr:{:#x}",__kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR);
+    initial_root_filesystem();//初始化根文件系统
     run_first_task();
     panic!("Kernel End");
 

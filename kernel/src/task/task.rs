@@ -2,8 +2,10 @@ use core::arch::global_asm;
 use core::panicking::panic;
 
 use alloc::collections::vec_deque::VecDeque;
+use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use log::error;
+use log::trace;
 use riscv::register::sstatus;
 use riscv::register::sstatus::SPP;
 use crate::__kernel_refume;
@@ -34,14 +36,31 @@ enum TaskStatus {
     Exit,
 }
 
+
+///进程id 需要实现回收 rail自动分配
+pub struct  ProcessId(usize);
+
+///进程id分配器 需要实现分配 [start,end)
+pub struct ProcessIdAlloctor{
+    current:usize,//当前的pid
+    end:usize,//最高限制的pid，可选
+    id_pool:Vec<ProcessId>
+}
+
 pub struct TaskControlBlock{
-    pub memory_set:MapSet,//程序地址空间
-    task_statut:TaskStatus,//程序运行状态
-    task_context:TaskContext,//任务上下文
-    trap_context_ppn:usize,//陷阱上下文物理帧
-    pass:usize,//行程
-    stride:usize,//步长
-    ticket:usize,//权重
+        pub pid:ProcessId,//进程id
+        pub memory_set:MapSet,//程序地址空间
+        task_statut:TaskStatus,//程序运行状态
+        task_context:TaskContext,//任务上下文
+        trap_context_ppn:usize,//陷阱上下文物理帧
+        pass:usize,//行程
+        stride:usize,//步长
+        ticket:usize,//权重
+}
+
+//暂留，后期再重构
+pub struct TaskControlBlockInner{
+
 }
 
 
@@ -55,6 +74,38 @@ pub struct TaskManagerInner{
 pub struct TaskManager{//单核环境目前无竞争
     ///注意释放时机
    pub task_que_inner:UPSafeCell<TaskManagerInner>,//内部可变性 
+}
+
+impl  ProcessIdAlloctor{
+    ///初始化进程id分配器 start:起始分配pid end:限制最大的pid
+    pub fn initial_processid_alloctor(start:usize,end:usize)->Self{
+        let id_pool :Vec<ProcessId>= Vec::new();
+            ProcessIdAlloctor { current: start, end ,id_pool:id_pool}
+    }
+
+    ///分配进程id
+    pub fn alloc_id(&mut self)->Option<ProcessId>{
+        //首先检查pool是否有可用process
+        if !self.id_pool.is_empty(){
+          return self.id_pool.pop();
+        }
+        //检查边界 ，先把currentid+1，然后返回
+        if self.current < self.end{
+            self.current+=1;
+           return Some(ProcessId(self.current-1));
+        }
+
+        None
+    }
+}
+
+
+impl Drop for ProcessId {
+    fn drop(&mut self) {
+        ///进程id自动回收 rail思想 需要先初始化全局processidalloctor
+        ProcessId_ALLOCTOR.lock().id_pool.push(ProcessId(self.0));//实际只需要保存id号
+        trace!("Process Id :{} recycled!",self.0)
+    }
 }
 
 
@@ -87,6 +138,7 @@ impl TaskControlBlock {
             .expect("trap ppn translate failed");
         
         let task_control_block = TaskControlBlock {
+            pid:ProcessId_ALLOCTOR.lock().alloc_id().expect("No Process ID Can use"),
             memory_set: memset,
             task_statut: TaskStatus::Ready,
             task_context: task_cx,
@@ -287,6 +339,12 @@ impl TaskContext {
     pub fn trapnew_init(sp:usize)->Self{
        TaskContext { ra: __kernel_refume as usize, sp: sp, calleed_register: [0;12] }
     }
+}
+
+
+///全局进程id分配器
+lazy_static!{
+    pub static ref ProcessId_ALLOCTOR:UPSafeCell<ProcessIdAlloctor>=UPSafeCell::new(ProcessIdAlloctor::initial_processid_alloctor(0, 10_000_000));
 }
 
 /// 全局任务管理器，加载所有应用程序

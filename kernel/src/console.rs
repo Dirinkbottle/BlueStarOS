@@ -1,17 +1,12 @@
-use core::fmt::{self, Write};
-use crate::sbi::putc;
-struct Stdout;
-impl Write for Stdout {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for cha in s.chars() {
-            putc(cha as usize);
-        }
-        Ok(())
-    }
+use core::fmt;
+use crate::driver::print as driver_print;
+
+/// 打印函数（委托给driver模块）
+pub fn print(fmt: fmt::Arguments) {
+    driver_print(fmt);
 }
-pub fn print(fmt:fmt::Arguments){
-    Stdout.write_fmt(fmt).unwrap()
-}
+
+
 ///print string
 #[macro_export]
 macro_rules! print {

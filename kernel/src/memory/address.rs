@@ -19,6 +19,8 @@ pub struct PhysiAddr(pub usize);
 #[derive(Debug,Clone,Copy)]
 #[repr(C)]
 pub struct PageTableEntry(pub usize);
+
+#[derive(Clone)]
 pub struct PageTable{
     pub root_ppn:PhysiNumber,
     entries:Vec<FramTracker>,

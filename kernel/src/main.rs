@@ -5,12 +5,13 @@
 //#![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message,alloc,panic_internals)]
+#![feature(panic_info_message,alloc,panic_internals,const_trait_impl,effects)]
 use core::arch::global_asm;
 
+mod sbi;
+mod driver;  // driver 必须在 console 之前加载，因为 console 依赖 driver
 #[macro_use]
 mod console;
-mod sbi;
 mod panic;
 mod config;
 mod logger;
@@ -20,12 +21,15 @@ mod syscall;
 mod trap;
 mod time;
 mod task;
-mod driver;
 mod fs;
+mod ffi;
+
 use alloc::string::String;
 use log::{debug, trace, warn};
+use crate::driver::{init_global_block_device, get_global_block_device};
 use riscv::asm;
 use crate::config::{ebss, sbss};
+use crate::driver::{BLOCK_DEVICE, BlockDevice, test_block_write_read};
 use crate::task::run_first_task;
 use crate::time::{ set_next_timeInterupt};
 use crate::trap::{enable_timer_interupt, rather_global_interrupt, set_kernel_trap_handler};
@@ -33,7 +37,7 @@ extern crate alloc;
 use crate::{config::*, logger::kernel_info_debug, memory::allocator_init};
 use crate::memory::init_frame_allocator;
 use crate::memory::MapSet;
-use crate::fs::{create_file, initial_root_filesystem, read_file, write_file};
+use BlueosFS::*;
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("app.asm"));
 /// clear BSS segment
@@ -57,15 +61,28 @@ pub fn blue_main() -> ! {//永远不会返回
     kernel_init(); //bss，日志，分配器初始化
     set_kernel_trap_handler();//初始化陷阱入口，应该在地址空间激活前开启
     KERNEL_SPACE.lock().activate();//激活地址空间
-    rather_global_interrupt();//愿意处理全局中断使能 qemubug？？？？不设置也能正常中断.....
+    rather_global_interrupt();//愿意处理全局中断使能
     enable_timer_interupt();//开启全局时间中断使能
     set_next_timeInterupt();//第一次开启时钟中断
-    // kernel_space.translate_test();
     warn!("All right,kernel Will end\n");
     debug!("stext {:#x}",__kernel_trap as usize);
     debug!("traper {:#x}",straper as usize);
     debug!("trap refume virtualaddr:{:#x}",__kernel_refume as usize - __kernel_trap as usize + TRAP_BOTTOM_ADDR);
-    initial_root_filesystem();//初始化根文件系统
+    BLOCK_DEVICE.lock().initial_block_device();//初始化块设备
+    
+    // 初始化全局块设备并设置到 BlueosFS
+    init_global_block_device();
+    let block_device = get_global_block_device().expect("Failed to get global block device");
+    BlueosFS::set_global_block_device(block_device);
+    
+    initial_root_filesystem();//初始化根文件系统（包含格式化检查）
+    
+    // 将测试文件加载到文件系统
+    use crate::fs::make_testfile;
+    //make_testfile();
+    
+    //test_block_device();
+    //test_block_write_read();
     run_first_task();
     panic!("Kernel End");
 

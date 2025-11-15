@@ -102,10 +102,10 @@ impl From<MapAreaFlags> for PTEFlags {
 }
 #[derive(PartialEq,Clone, Copy,Debug)]
 pub enum MapType {
-    Indentical,
-    Maped
+    Indentical,//直接分配页帧
+    Maped,//不直接分配页帧
 }
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct MapArea{
     ///虚拟页号范围,闭区间
     range:VirNumRange,
@@ -122,6 +122,8 @@ pub enum MapAreaType {
     ///只是预留虚拟地址空间，没有合法页表项，目前没有对应物理页帧，后期pagefault处理，目的只是检测访问pagefault的地址是否为先前映射的
     MMAP,
 }
+
+#[derive(Clone)]
 pub struct MapSet{
     ///页表
     pub table:PageTable,
@@ -300,9 +302,9 @@ impl MapSet {
 
 
 
-    ///TODO:
-    ///从elf解析数据创建应用地址空间 Mapset entry user_stack,kernel_sp心智空间有限，姑且这样吧,外部库不值得研究，内核全部完成后自己实现xmas.映射trap，trapcontext，userstack，kernelstack，userheap。
+    ///从elf解析数据创建应用地址空间 Mapset entry user_stack,kernel_sp
     /// appid从0开始，必须手动+1
+    /// elf_data: ELF 文件数据（可以从文件系统读取）
     pub fn from_elf(old_appid:usize,elf_data:&[u8])->(Self,usize,VirAddr,usize){ 
         let appid=old_appid+1;//适配之前的栈布局
         let mut memory_set = Self::new_bare();
@@ -486,6 +488,14 @@ impl MapSet {
 
         //映射陷阱
         mem_set.map_traper();
+
+        //映射硬件段
+        let hardware_range = VirNumRange::new(VirAddr(0x0 as usize), VirAddr(0x10010000 as usize));//range封装过
+        mem_set.add_area(hardware_range, 
+            MapType::Indentical, 
+             MapAreaFlags::R | MapAreaFlags::W  ,
+             None
+            ,MapAreaType::DEFAULT);
 
         //映射代码段
         let text_range = VirNumRange::new(VirAddr(stext as usize), VirAddr(etext as usize));//range封装过

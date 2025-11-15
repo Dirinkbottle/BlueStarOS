@@ -109,7 +109,10 @@ run-inner: build
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
-		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s
+		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s \
+		-drive file=disk.img,format=raw,if=none,id=x0 \
+		-net none \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 
 debug: build
 	@tmux new-session -d \

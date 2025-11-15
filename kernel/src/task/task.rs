@@ -2,6 +2,9 @@ use core::arch::global_asm;
 use core::panicking::panic;
 
 use alloc::collections::vec_deque::VecDeque;
+use alloc::sync::Arc;
+use alloc::sync::Weak;
+use alloc::vec;
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use log::error;
@@ -10,6 +13,8 @@ use riscv::register::sstatus;
 use riscv::register::sstatus::SPP;
 use crate::__kernel_refume;
 use crate::config::*;
+use crate::driver::{Stdin, Stdout};
+use BlueosFS::{FileDescriptor, FileFlags};
 use crate::memory::*;
 use crate::sbi::shutdown;
 use crate::task::file_loader;
@@ -20,6 +25,7 @@ use crate::{ sync::UPSafeCell, trap::TrapContext};
 global_asm!(include_str!("_switch.S"));
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct TaskContext{
      ra:usize, //offset 0
      sp:usize, //offser 8
@@ -27,18 +33,19 @@ pub struct TaskContext{
      calleed_register:[usize;12]//offset 16-..
 }
 
+#[derive(Clone)]
 enum TaskStatus {
     UnInit,
     Runing,
     Zombie,
     Blocking,
     Ready,
-    Exit,
 }
 
 
 ///进程id 需要实现回收 rail自动分配
-pub struct  ProcessId(usize);
+#[derive(Clone)]
+pub struct  ProcessId(pub usize);
 
 ///进程id分配器 需要实现分配 [start,end)
 pub struct ProcessIdAlloctor{
@@ -47,16 +54,23 @@ pub struct ProcessIdAlloctor{
     id_pool:Vec<ProcessId>
 }
 
+#[derive(Clone)]
 pub struct TaskControlBlock{
-        pub pid:ProcessId,//进程id
-        pub memory_set:MapSet,//程序地址空间
-        task_statut:TaskStatus,//程序运行状态
-        task_context:TaskContext,//任务上下文
-        trap_context_ppn:usize,//陷阱上下文物理帧
-        pass:usize,//行程
-        stride:usize,//步长
-        ticket:usize,//权重
+        pub pid:ProcessId,                              //进程id
+        pub memory_set:MapSet,                          //程序地址空间
+        task_statut:TaskStatus,                         //程序运行状态
+        task_context:TaskContext,                       //任务上下文
+        trap_context_ppn:usize,                         //陷阱上下文物理帧
+        pass:usize,                                     //行程
+        stride:usize,                                   //步长
+        ticket:usize,                                   //权重
+        file_descriptor:Vec<Arc<FileDescriptor>>,       //文件描述符表
+       // parent:Weak<TaskControlBlock>,                  //父进程弱引用
+       // childrens:Vec<Arc<TaskControlBlock>>            //子进程强引用
 }
+
+
+
 
 //暂留，后期再重构
 pub struct TaskControlBlockInner{
@@ -123,6 +137,12 @@ impl TaskContext {
 }
 
 impl TaskControlBlock {
+
+    ///添加子进程引用
+    pub fn add_children(&mut self,tlb:Arc<TaskControlBlock>){
+       // self.childrens.push(tlb);
+    }
+
     /// 创建新任务
     /// app_id: 应用程序ID（从0开始，用于加载不同的ELF文件）
     /// kernel_stack_id: 内核栈ID（从1开始，用于分配不同的内核栈空间）
@@ -130,12 +150,23 @@ impl TaskControlBlock {
         debug!("Creating task for app_id: {}, kernel_stack_id: {}", app_id, kernel_stack_id);
         
         let elf_data = file_loader(app_id);
-        let (mut memset, elf_entry, user_sp, kernel_sp) = MapSet::from_elf(kernel_stack_id, elf_data);
+        let (mut memset, elf_entry, user_sp, kernel_sp) = MapSet::from_elf(kernel_stack_id, &elf_data);
         let task_cx = TaskContext::return_trap_new(kernel_sp);
         let kernel_satp = KERNEL_SPACE.lock().table.satp_token();
         let trap_cx_ppn = memset.table
             .translate_byvpn(VirAddr(TRAP_CONTEXT_ADDR).strict_into_virnum())
             .expect("trap ppn translate failed");
+        
+        // 初始化文件描述符表：0=stdin, 1=stdout
+        let mut file_descriptor_table: Vec<Arc<FileDescriptor>> = Vec::new();
+        file_descriptor_table.push(Arc::new(FileDescriptor::new(
+            Arc::new(Stdin),
+            FileFlags::read_only()
+        )));
+        file_descriptor_table.push(Arc::new(FileDescriptor::new(
+            Arc::new(Stdout),
+            FileFlags::write_only()
+        )));
         
         let task_control_block = TaskControlBlock {
             pid:ProcessId_ALLOCTOR.lock().alloc_id().expect("No Process ID Can use"),
@@ -145,7 +176,9 @@ impl TaskControlBlock {
             trap_context_ppn: trap_cx_ppn.0,
             pass: 0,
             stride: BIG_INT / TASK_TICKET,
-            ticket: TASK_TICKET
+            ticket: TASK_TICKET,
+            file_descriptor: file_descriptor_table,
+          //  parent:
         };
         
         // 初始化 TrapContext
@@ -168,7 +201,7 @@ impl TaskControlBlock {
 
 impl TaskManager {//全局唯一
     ///添加任务队列或者归队
-    pub fn add_task(&mut self,task:TaskControlBlock){
+    pub fn add_task(self,task:TaskControlBlock){
         self.task_que_inner.lock().task_queen.push_back(task);
     }
     ///从队列移除当前任务,应该由aplication的exit系统调用来执行 之后必须执行下一个任务 bug修复：应该同时移动指针到任意一个ready的任务
@@ -319,6 +352,16 @@ impl TaskManager {//全局唯一
         };
         drop(inner);
         trap_context
+    }
+
+    ///获取当前任务的文件描述符
+    pub fn get_current_fd(&self, fd: usize) -> Option<Arc<FileDescriptor>> {
+        let inner = self.task_que_inner.lock();
+        let current_task = inner.current;
+        let fd_table = &inner.task_queen[current_task].file_descriptor;
+        let result = fd_table.get(fd).cloned();
+        drop(inner);
+        result
     }
 
 

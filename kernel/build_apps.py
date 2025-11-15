@@ -18,12 +18,17 @@ def find_user_apps():
     """
     查找所有用户程序
     返回: [(app_name, elf_path), ...]
+    注意: init.rs 固定为索引 0，idle.rs 固定为索引 1，其他应用按名称排序
     """
     if not USER_BIN_DIR.exists():
         print(f"Error: {USER_BIN_DIR} not found!", file=sys.stderr)
         return []
     
-    apps = []
+    # 特殊应用：固定位置
+    init_app = None
+    idle_app = None
+    other_apps = []
+    
     for rs_file in USER_BIN_DIR.glob("*.rs"):
         app_name = rs_file.stem
         # 跳过一些特殊文件
@@ -31,10 +36,26 @@ def find_user_apps():
             continue
         
         elf_path = USER_TARGET_DIR / app_name
-        apps.append((app_name, elf_path))
+        
+        # 检查是否是特殊应用
+        if app_name == "init":
+            init_app = (app_name, elf_path)
+        elif app_name == "idle":
+            idle_app = (app_name, elf_path)
+        else:
+            other_apps.append((app_name, elf_path))
     
-    # 按名称排序，确保生成的文件顺序稳定
-    apps.sort(key=lambda x: x[0])
+    # 其他应用按名称排序
+    other_apps.sort(key=lambda x: x[0])
+    
+    # 组装最终列表：init 固定为 0，idle 固定为 1，其他应用从 2 开始
+    apps = []
+    if init_app:
+        apps.append(init_app)
+    if idle_app:
+        apps.append(idle_app)
+    apps.extend(other_apps)
+    
     return apps
 
 def generate_app_asm(apps):
@@ -106,8 +127,14 @@ def main():
     
     if apps:
         print(f"      Found {len(apps)} application(s):")
-        for i, (app_name, elf_path) in enumerate(apps, 1):
-            print(f"      [{i}] {app_name}")
+        for i, (app_name, elf_path) in enumerate(apps):
+            # 显示索引（从 0 开始）和应用名称
+            if app_name == "init":
+                print(f"      [{i}] {app_name} (fixed at index 0)")
+            elif app_name == "idle":
+                print(f"      [{i}] {app_name} (fixed at index 1)")
+            else:
+                print(f"      [{i}] {app_name}")
     else:
         print("      No applications found!")
     
